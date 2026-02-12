@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply text-slate-900;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-slate-200 rounded-card shadow-card;
+  }
+
+  .muted {
+    @apply text-slate-500;
+  }
+
+  .label {
+    @apply text-xs font-semibold text-slate-600;
+  }
+
+  .input-base {
+    @apply h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-duke-700/30;
+  }
+
+  .select-base {
+    @apply h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-duke-700/30;
+  }
+
+  .btn-primary {
+    @apply inline-flex h-10 items-center justify-center rounded-lg bg-duke-900 px-4 text-sm font-semibold text-white hover:bg-duke-800 focus:outline-none focus:ring-2 focus:ring-duke-700/30;
+  }
+
+  .btn-secondary {
+    @apply inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-duke-700/30;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full bg-duke-900/5 px-3 py-1 text-xs font-semibold text-duke-900;
+  }
+
+  .tag {
+    @apply inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700;
+  }
+}

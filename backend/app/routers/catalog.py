@@ -1,0 +1,441 @@
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..auth import get_current_user
+from ..db import get_db
+from ..models import (
+    Cart,
+    CartItem,
+    ClientIntakeForm,
+    Ranking,
+    RankingItem,
+    Student,
+    TeammatePreference,
+    User,
+    UserProfile,
+)
+from ..schemas import (
+    CartItemIn,
+    CartOut,
+    DomainOut,
+    FilterOptionsOut,
+    OrganizationOut,
+    ProjectCardOut,
+    ProjectOut,
+    RankingsIn,
+    RankingsOut,
+    SkillOut,
+    StatsOut,
+    StudentOut,
+    TeammateChoicesIn,
+    TeammateChoicesOut,
+    UserSummaryOut,
+)
+
+router = APIRouter(prefix="/api", tags=["catalog"])
+
+
+@router.get("/organizations", response_model=List[OrganizationOut])
+def list_organizations(db: Session = Depends(get_db)):
+    rows = db.execute(select(ClientIntakeForm.org_name, ClientIntakeForm.org_industry)).all()
+    return [
+        OrganizationOut(id=index + 1, name=org_name, industry=industry, company_size=None)
+        for index, (org_name, industry) in enumerate(sorted(rows, key=lambda x: x[0]))
+    ]
+
+
+@router.get("/domains", response_model=List[DomainOut])
+def list_domains(db: Session = Depends(get_db)):
+    rows = db.execute(select(ClientIntakeForm.technical_domains)).scalars().all()
+    values: set[str] = set()
+    for item in rows:
+        if isinstance(item, list):
+            values.update([v for v in item if v])
+    return [DomainOut(id=index + 1, name=value) for index, value in enumerate(sorted(values))]
+
+
+@router.get("/skills", response_model=List[SkillOut])
+def list_skills(db: Session = Depends(get_db)):
+    rows = db.execute(select(ClientIntakeForm.required_skills)).scalars().all()
+    values: set[str] = set()
+    for item in rows:
+        if isinstance(item, list):
+            values.update([v for v in item if v])
+    return [SkillOut(id=index + 1, name=value) for index, value in enumerate(sorted(values))]
+
+
+@router.get("/students", response_model=List[StudentOut])
+def list_students(db: Session = Depends(get_db)):
+    return db.execute(select(Student).order_by(Student.full_name.asc())).scalars().all()
+
+
+@router.get("/filters", response_model=FilterOptionsOut)
+def list_filters(db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(
+            ClientIntakeForm.technical_domains,
+            ClientIntakeForm.required_skills,
+            ClientIntakeForm.org_industry,
+            ClientIntakeForm.project_sector,
+        )
+    ).all()
+
+    domains_set: set[str] = set()
+    skills_set: set[str] = set()
+    industries_set: set[str] = set()
+    sectors_set: set[str] = set()
+
+    for domains, skills, industry, sector in rows:
+        if isinstance(domains, list):
+            domains_set.update([v for v in domains if v])
+        if isinstance(skills, list):
+            skills_set.update([v for v in skills if v])
+        if industry:
+            industries_set.add(industry)
+        if sector:
+            sectors_set.add(sector)
+
+    return FilterOptionsOut(
+        domains=sorted(domains_set or sectors_set),
+        skills=sorted(skills_set),
+        difficulties=[],
+        modalities=[],
+        cadences=[],
+        confidentiality=[],
+        industries=sorted(industries_set),
+        company_sizes=[],
+    )
+
+
+@router.get("/user-summary", response_model=UserSummaryOut)
+def user_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    profile = (
+        db.execute(select(UserProfile).where(UserProfile.user_id == current_user.id))
+        .scalars()
+        .first()
+    )
+    if not profile:
+        profile = UserProfile(user_id=current_user.id, avg_match_score=86)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+
+    return UserSummaryOut(avg_match_score=profile.avg_match_score)
+
+
+@router.get("/stats", response_model=StatsOut)
+def stats(db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    active_projects = db.execute(select(func.count(ClientIntakeForm.org_name))).scalar_one()
+    new_this_week = db.execute(
+        select(func.count(ClientIntakeForm.org_name)).where(ClientIntakeForm.created_at >= week_ago)
+    ).scalar_one()
+
+    return StatsOut(active_projects=active_projects, new_this_week=new_this_week)
+
+
+@router.get("/projects", response_model=List[ProjectOut])
+def list_projects(
+    q: Optional[str] = Query(default=None, description="Free text search"),
+    domain: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    modality: Optional[str] = None,
+    organization: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    rows = db.execute(select(ClientIntakeForm).order_by(ClientIntakeForm.created_at.desc())).scalars().all()
+
+    def matches(row: ClientIntakeForm) -> bool:
+        if q:
+            needle = q.lower()
+            haystack = " ".join(
+                filter(
+                    None,
+                    [
+                        row.org_name,
+                        row.project_title,
+                        row.project_summary,
+                        row.project_description,
+                        row.org_industry,
+                        row.project_sector,
+                    ],
+                )
+            ).lower()
+            if needle not in haystack:
+                return False
+        if organization and organization.lower() not in (row.org_name or "").lower():
+            return False
+        if domain:
+            domains = row.technical_domains if isinstance(row.technical_domains, list) else []
+            if domain not in domains and domain != (row.project_sector or ""):
+                return False
+        return True
+
+    filtered = [row for row in rows if matches(row)]
+    sliced = filtered[offset : offset + limit]
+
+    out: list[ProjectOut] = []
+    for row in sliced:
+        domains = row.technical_domains if isinstance(row.technical_domains, list) else []
+        skills = row.required_skills if isinstance(row.required_skills, list) else []
+        out.append(
+            ProjectOut(
+                id=row.org_name,
+                title=row.project_title or row.org_name,
+                description=row.project_description or row.project_summary or "",
+                duration_weeks=None,
+                difficulty=None,
+                modality=None,
+                cadence=None,
+                confidentiality=None,
+                min_hours_per_week=None,
+                max_hours_per_week=None,
+                domain=domains[0] if domains else row.project_sector,
+                organization=row.org_name,
+                tags=skills,
+                skills=skills,
+                avg_rating=None,
+                ratings_count=0,
+                created_at=row.created_at,
+            )
+        )
+
+    return out
+
+
+def _get_or_create_open_cart(db: Session, user_id: int) -> Cart:
+    cart = (
+        db.execute(select(Cart).where(Cart.user_id == user_id, Cart.status == "open").order_by(Cart.id.desc()))
+        .scalars()
+        .first()
+    )
+    if cart:
+        return cart
+
+    cart = Cart(user_id=user_id)
+    db.add(cart)
+    db.commit()
+    db.refresh(cart)
+    return cart
+
+
+def _get_or_create_ranking(db: Session, user_id: int) -> Ranking:
+    ranking = db.execute(select(Ranking).where(Ranking.user_id == user_id)).scalars().first()
+    if ranking:
+        return ranking
+
+    ranking = Ranking(user_id=user_id)
+    db.add(ranking)
+    db.commit()
+    db.refresh(ranking)
+    return ranking
+
+
+def _fetch_project_cards(db: Session, project_ids: list[str]) -> list[ProjectCardOut]:
+    if not project_ids:
+        return []
+
+    rows = (
+        db.execute(select(ClientIntakeForm).where(ClientIntakeForm.org_name.in_(project_ids)))
+        .scalars()
+        .all()
+    )
+
+    cards = []
+    for row in rows:
+        skills = row.required_skills if isinstance(row.required_skills, list) else []
+        cards.append(
+            ProjectCardOut(
+                id=row.org_name,
+                title=row.project_title or row.org_name,
+                organization=row.org_name,
+                tags=skills,
+            )
+        )
+
+    order = {pid: index for index, pid in enumerate(project_ids)}
+    cards.sort(key=lambda item: order.get(item.id, 9999))
+    return cards
+
+
+@router.post("/cart/items", response_model=CartOut)
+def add_to_cart(
+    payload: CartItemIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cart = _get_or_create_open_cart(db, current_user.id)
+
+    existing = (
+        db.execute(
+            select(CartItem).where(CartItem.cart_id == cart.id, CartItem.org_name == payload.project_id)
+        )
+        .scalars()
+        .first()
+    )
+    if existing:
+        return get_cart(db=db, current_user=current_user)
+
+    selected = db.execute(select(func.count(CartItem.org_name)).where(CartItem.cart_id == cart.id)).scalar_one()
+    if selected >= 10:
+        return get_cart(db=db, current_user=current_user)
+
+    db.add(CartItem(cart_id=cart.id, org_name=payload.project_id))
+    db.commit()
+
+    return get_cart(db=db, current_user=current_user)
+
+
+@router.delete("/cart/items/{project_id}", response_model=CartOut)
+def remove_from_cart(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cart = (
+        db.execute(
+            select(Cart).where(Cart.user_id == current_user.id, Cart.status == "open").order_by(Cart.id.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if not cart:
+        return get_cart(db=db, current_user=current_user)
+
+    db.query(CartItem).filter(CartItem.cart_id == cart.id, CartItem.org_name == project_id).delete()
+    db.commit()
+
+    return get_cart(db=db, current_user=current_user)
+
+
+@router.get("/cart", response_model=CartOut)
+def get_cart(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user_id = current_user.id
+    cart = (
+        db.execute(select(Cart).where(Cart.user_id == user_id, Cart.status == "open").order_by(Cart.id.desc()))
+        .scalars()
+        .first()
+    )
+    if not cart:
+        return CartOut(cart_id=None, user_id=user_id, status="open", selected=0, project_ids=[])
+
+    project_ids = db.execute(select(CartItem.org_name).where(CartItem.cart_id == cart.id)).scalars().all()
+    return CartOut(
+        cart_id=cart.id,
+        user_id=user_id,
+        status=cart.status,
+        selected=len(project_ids),
+        project_ids=project_ids,
+    )
+
+
+@router.get("/teammate-choices", response_model=TeammateChoicesOut)
+def get_teammate_choices(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.execute(
+            select(TeammatePreference.student_id, TeammatePreference.preference).where(
+                TeammatePreference.user_id == current_user.id
+            )
+        )
+        .all()
+    )
+    want_ids = [sid for sid, pref in rows if pref == "want"]
+    avoid_ids = [sid for sid, pref in rows if pref == "avoid"]
+    return TeammateChoicesOut(want_ids=want_ids, avoid_ids=avoid_ids)
+
+
+@router.post("/teammate-choices", response_model=TeammateChoicesOut)
+def set_teammate_choices(
+    payload: TeammateChoicesIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if len(payload.want_ids) > 5 or len(payload.avoid_ids) > 5:
+        raise HTTPException(status_code=400, detail="Each list must have at most 5 students")
+
+    if set(payload.want_ids) & set(payload.avoid_ids):
+        raise HTTPException(status_code=400, detail="A student cannot be in both lists")
+
+    db.execute(select(TeammatePreference).where(TeammatePreference.user_id == current_user.id))
+    db.query(TeammatePreference).filter(TeammatePreference.user_id == current_user.id).delete()
+
+    for sid in payload.want_ids:
+        db.add(TeammatePreference(user_id=current_user.id, student_id=sid, preference="want"))
+    for sid in payload.avoid_ids:
+        db.add(TeammatePreference(user_id=current_user.id, student_id=sid, preference="avoid"))
+
+    db.commit()
+    return TeammateChoicesOut(want_ids=payload.want_ids, avoid_ids=payload.avoid_ids)
+
+
+@router.get("/rankings", response_model=RankingsOut)
+def get_rankings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ranking = _get_or_create_ranking(db, current_user.id)
+
+    ranking_items = (
+        db.execute(
+            select(RankingItem)
+            .where(RankingItem.ranking_id == ranking.id)
+            .order_by(RankingItem.rank.asc())
+        )
+        .scalars()
+        .all()
+    )
+    top_ids = [item.org_name for item in ranking_items]
+
+    cart = (
+        db.execute(select(Cart).where(Cart.user_id == current_user.id, Cart.status == "open").order_by(Cart.id.desc()))
+        .scalars()
+        .first()
+    )
+    cart_ids: list[str] = []
+    if cart:
+        cart_ids = db.execute(select(CartItem.org_name).where(CartItem.cart_id == cart.id)).scalars().all()
+
+    top_ids = [pid for pid in top_ids if pid in cart_ids]
+    additional_ids = [pid for pid in cart_ids if pid not in top_ids]
+
+    return RankingsOut(
+        top_ten=_fetch_project_cards(db, top_ids),
+        additional=_fetch_project_cards(db, additional_ids),
+        ranked_count=len(top_ids),
+    )
+
+
+@router.post("/rankings", response_model=RankingsOut)
+def save_rankings(
+    payload: RankingsIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if len(payload.top_ten_ids) > 10:
+        raise HTTPException(status_code=400, detail="Top 10 max")
+
+    if len(set(payload.top_ten_ids)) != len(payload.top_ten_ids):
+        raise HTTPException(status_code=400, detail="Duplicate project")
+
+    ranking = _get_or_create_ranking(db, current_user.id)
+
+    db.query(RankingItem).filter(RankingItem.ranking_id == ranking.id).delete()
+    for index, project_id in enumerate(payload.top_ten_ids, start=1):
+        db.add(RankingItem(ranking_id=ranking.id, org_name=project_id, rank=index))
+    db.commit()
+
+    return get_rankings(db=db, current_user=current_user)
