@@ -30,6 +30,13 @@ export function getProjects(params = {}) {
   return request(`/api/projects${suffix}`)
 }
 
+export function searchProjects(payload = {}) {
+  return request('/api/search/projects', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function getStats() {
   return request('/api/stats')
 }
