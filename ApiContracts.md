@@ -114,6 +114,51 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 
 ---
 
+## Search
+### `POST /api/search/projects`
+**Auth:** No
+
+**Request**
+```json
+{
+  "q": "analytics",
+  "domains": ["AI/ML", "Analytics"],
+  "skills": ["Dashboard", "SQL"],
+  "industries": ["CPG"],
+  "organization": "Duke",
+  "match_mode": "and",
+  "limit": 50,
+  "offset": 0
+}
+```
+
+**Response 200**
+```json
+[
+  {
+    "id": "Blue Ridge SaaS",
+    "title": "NLP for Customer Support Insights",
+    "description": "Analyze support tickets...",
+    "duration_weeks": null,
+    "difficulty": null,
+    "modality": null,
+    "cadence": null,
+    "confidentiality": null,
+    "min_hours_per_week": null,
+    "max_hours_per_week": null,
+    "domain": "AI/ML",
+    "organization": "Blue Ridge SaaS",
+    "tags": ["Python","NLP","Topic Modeling"],
+    "skills": ["Python","NLP","Topic Modeling"],
+    "avg_rating": null,
+    "ratings_count": 0,
+    "created_at": "2026-02-12T12:00:00Z"
+  }
+]
+```
+
+---
+
 ## Filters
 ### `GET /api/filters`
 **Auth:** No

@@ -141,3 +141,14 @@ class RankingsOut(BaseModel):
 
 class RankingsIn(BaseModel):
     top_ten_ids: List[str] = Field(default_factory=list)
+
+
+class SearchProjectsIn(BaseModel):
+    q: Optional[str] = None
+    domains: List[str] = Field(default_factory=list)
+    skills: List[str] = Field(default_factory=list)
+    industries: List[str] = Field(default_factory=list)
+    organization: Optional[str] = None
+    match_mode: str = "and"
+    limit: int = 50
+    offset: int = 0

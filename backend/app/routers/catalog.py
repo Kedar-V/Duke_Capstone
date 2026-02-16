@@ -34,6 +34,7 @@ from ..schemas import (
     TeammateChoicesIn,
     TeammateChoicesOut,
     UserSummaryOut,
+    SearchProjectsIn,
 )
 
 router = APIRouter(prefix="/api", tags=["catalog"])
@@ -41,9 +42,13 @@ router = APIRouter(prefix="/api", tags=["catalog"])
 
 @router.get("/organizations", response_model=List[OrganizationOut])
 def list_organizations(db: Session = Depends(get_db)):
-    rows = db.execute(select(ClientIntakeForm.org_name, ClientIntakeForm.org_industry)).all()
+    rows = db.execute(
+        select(ClientIntakeForm.org_name, ClientIntakeForm.org_industry)
+    ).all()
     return [
-        OrganizationOut(id=index + 1, name=org_name, industry=industry, company_size=None)
+        OrganizationOut(
+            id=index + 1, name=org_name, industry=industry, company_size=None
+        )
         for index, (org_name, industry) in enumerate(sorted(rows, key=lambda x: x[0]))
     ]
 
@@ -55,7 +60,10 @@ def list_domains(db: Session = Depends(get_db)):
     for item in rows:
         if isinstance(item, list):
             values.update([v for v in item if v])
-    return [DomainOut(id=index + 1, name=value) for index, value in enumerate(sorted(values))]
+    return [
+        DomainOut(id=index + 1, name=value)
+        for index, value in enumerate(sorted(values))
+    ]
 
 
 @router.get("/skills", response_model=List[SkillOut])
@@ -65,7 +73,9 @@ def list_skills(db: Session = Depends(get_db)):
     for item in rows:
         if isinstance(item, list):
             values.update([v for v in item if v])
-    return [SkillOut(id=index + 1, name=value) for index, value in enumerate(sorted(values))]
+    return [
+        SkillOut(id=index + 1, name=value) for index, value in enumerate(sorted(values))
+    ]
 
 
 @router.get("/students", response_model=List[StudentOut])
@@ -135,9 +145,13 @@ def stats(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
 
-    active_projects = db.execute(select(func.count(ClientIntakeForm.org_name))).scalar_one()
+    active_projects = db.execute(
+        select(func.count(ClientIntakeForm.org_name))
+    ).scalar_one()
     new_this_week = db.execute(
-        select(func.count(ClientIntakeForm.org_name)).where(ClientIntakeForm.created_at >= week_ago)
+        select(func.count(ClientIntakeForm.org_name)).where(
+            ClientIntakeForm.created_at >= week_ago
+        )
     ).scalar_one()
 
     return StatsOut(active_projects=active_projects, new_this_week=new_this_week)
@@ -154,7 +168,13 @@ def list_projects(
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
-    rows = db.execute(select(ClientIntakeForm).order_by(ClientIntakeForm.created_at.desc())).scalars().all()
+    rows = (
+        db.execute(
+            select(ClientIntakeForm).order_by(ClientIntakeForm.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
 
     def matches(row: ClientIntakeForm) -> bool:
         if q:
@@ -177,7 +197,9 @@ def list_projects(
         if organization and organization.lower() not in (row.org_name or "").lower():
             return False
         if domain:
-            domains = row.technical_domains if isinstance(row.technical_domains, list) else []
+            domains = (
+                row.technical_domains if isinstance(row.technical_domains, list) else []
+            )
             if domain not in domains and domain != (row.project_sector or ""):
                 return False
         return True
@@ -187,7 +209,143 @@ def list_projects(
 
     out: list[ProjectOut] = []
     for row in sliced:
-        domains = row.technical_domains if isinstance(row.technical_domains, list) else []
+        domains = (
+            row.technical_domains if isinstance(row.technical_domains, list) else []
+        )
+        skills = row.required_skills if isinstance(row.required_skills, list) else []
+        out.append(
+            ProjectOut(
+                id=row.org_name,
+                title=row.project_title or row.org_name,
+                description=row.project_description or row.project_summary or "",
+                duration_weeks=None,
+                difficulty=None,
+                modality=None,
+                cadence=None,
+                confidentiality=None,
+                min_hours_per_week=None,
+                max_hours_per_week=None,
+                domain=domains[0] if domains else row.project_sector,
+                organization=row.org_name,
+                tags=skills,
+                skills=skills,
+                avg_rating=None,
+                ratings_count=0,
+                created_at=row.created_at,
+            )
+        )
+
+    return out
+
+
+@router.post("/search/projects", response_model=List[ProjectOut])
+def search_projects(payload: SearchProjectsIn, db: Session = Depends(get_db)):
+    rows = (
+        db.execute(
+            select(ClientIntakeForm).order_by(ClientIntakeForm.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+    def to_list(value) -> list[str]:
+        if isinstance(value, list):
+            return [str(v) for v in value if v]
+        if value:
+            return [str(value)]
+        return []
+
+    def contains_substring(needle: str, haystack: str) -> bool:
+        return needle.lower() in (haystack or "").lower()
+
+    def list_contains_substring(needle: str, values: list[str]) -> bool:
+        return any(needle.lower() in v.lower() for v in values if v)
+
+    def matches_all(selected: list[str], candidates: list[str]) -> bool:
+        for item in selected:
+            if item and not list_contains_substring(item, candidates):
+                return False
+        return True
+
+    def matches_any(selected: list[str], candidates: list[str]) -> bool:
+        return any(
+            item and list_contains_substring(item, candidates) for item in selected
+        )
+
+    def matches(row: ClientIntakeForm) -> bool:
+        if payload.q:
+            haystack_parts = [
+                row.org_name,
+                row.project_title,
+                row.project_summary,
+                row.project_description,
+                row.org_industry,
+                row.org_industry_other,
+                row.project_sector,
+                row.required_skills_other,
+            ]
+            haystack_parts += to_list(row.required_skills)
+            haystack_parts += to_list(row.technical_domains)
+            haystack = " ".join(filter(None, haystack_parts)).lower()
+            if payload.q.lower() not in haystack:
+                return False
+
+        if payload.organization and not contains_substring(
+            payload.organization, row.org_name or ""
+        ):
+            return False
+
+        match_mode = (payload.match_mode or "and").lower()
+
+        if payload.domains:
+            domain_candidates = to_list(row.technical_domains)
+            if row.project_sector:
+                domain_candidates.append(row.project_sector)
+            domain_match = (
+                matches_any(payload.domains, domain_candidates)
+                if match_mode == "or"
+                else matches_all(payload.domains, domain_candidates)
+            )
+            if not domain_match:
+                return False
+
+        if payload.skills:
+            skill_candidates = to_list(row.required_skills)
+            if row.required_skills_other:
+                skill_candidates.append(row.required_skills_other)
+            skill_match = (
+                matches_any(payload.skills, skill_candidates)
+                if match_mode == "or"
+                else matches_all(payload.skills, skill_candidates)
+            )
+            if not skill_match:
+                return False
+
+        if payload.industries:
+            industry_candidates = [
+                v for v in [row.org_industry, row.org_industry_other] if v
+            ]
+            industry_match = (
+                matches_any(payload.industries, industry_candidates)
+                if match_mode == "or"
+                else matches_all(payload.industries, industry_candidates)
+            )
+            if not industry_match:
+                return False
+
+        return True
+
+    filtered = [row for row in rows if matches(row)]
+
+    limit = max(1, min(payload.limit, 200))
+    offset = max(payload.offset, 0)
+    sliced = filtered[offset : offset + limit]
+
+    out: list[ProjectOut] = []
+    for row in sliced:
+        domains = (
+            row.technical_domains if isinstance(row.technical_domains, list) else []
+        )
         skills = row.required_skills if isinstance(row.required_skills, list) else []
         out.append(
             ProjectOut(
@@ -216,7 +374,11 @@ def list_projects(
 
 def _get_or_create_open_cart(db: Session, user_id: int) -> Cart:
     cart = (
-        db.execute(select(Cart).where(Cart.user_id == user_id, Cart.status == "open").order_by(Cart.id.desc()))
+        db.execute(
+            select(Cart)
+            .where(Cart.user_id == user_id, Cart.status == "open")
+            .order_by(Cart.id.desc())
+        )
         .scalars()
         .first()
     )
@@ -231,7 +393,9 @@ def _get_or_create_open_cart(db: Session, user_id: int) -> Cart:
 
 
 def _get_or_create_ranking(db: Session, user_id: int) -> Ranking:
-    ranking = db.execute(select(Ranking).where(Ranking.user_id == user_id)).scalars().first()
+    ranking = (
+        db.execute(select(Ranking).where(Ranking.user_id == user_id)).scalars().first()
+    )
     if ranking:
         return ranking
 
@@ -247,7 +411,9 @@ def _fetch_project_cards(db: Session, project_ids: list[str]) -> list[ProjectCar
         return []
 
     rows = (
-        db.execute(select(ClientIntakeForm).where(ClientIntakeForm.org_name.in_(project_ids)))
+        db.execute(
+            select(ClientIntakeForm).where(ClientIntakeForm.org_name.in_(project_ids))
+        )
         .scalars()
         .all()
     )
@@ -279,7 +445,9 @@ def add_to_cart(
 
     existing = (
         db.execute(
-            select(CartItem).where(CartItem.cart_id == cart.id, CartItem.org_name == payload.project_id)
+            select(CartItem).where(
+                CartItem.cart_id == cart.id, CartItem.org_name == payload.project_id
+            )
         )
         .scalars()
         .first()
@@ -287,7 +455,9 @@ def add_to_cart(
     if existing:
         return get_cart(db=db, current_user=current_user)
 
-    selected = db.execute(select(func.count(CartItem.org_name)).where(CartItem.cart_id == cart.id)).scalar_one()
+    selected = db.execute(
+        select(func.count(CartItem.org_name)).where(CartItem.cart_id == cart.id)
+    ).scalar_one()
     if selected >= 10:
         return get_cart(db=db, current_user=current_user)
 
@@ -305,7 +475,9 @@ def remove_from_cart(
 ):
     cart = (
         db.execute(
-            select(Cart).where(Cart.user_id == current_user.id, Cart.status == "open").order_by(Cart.id.desc())
+            select(Cart)
+            .where(Cart.user_id == current_user.id, Cart.status == "open")
+            .order_by(Cart.id.desc())
         )
         .scalars()
         .first()
@@ -313,24 +485,38 @@ def remove_from_cart(
     if not cart:
         return get_cart(db=db, current_user=current_user)
 
-    db.query(CartItem).filter(CartItem.cart_id == cart.id, CartItem.org_name == project_id).delete()
+    db.query(CartItem).filter(
+        CartItem.cart_id == cart.id, CartItem.org_name == project_id
+    ).delete()
     db.commit()
 
     return get_cart(db=db, current_user=current_user)
 
 
 @router.get("/cart", response_model=CartOut)
-def get_cart(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_cart(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     user_id = current_user.id
     cart = (
-        db.execute(select(Cart).where(Cart.user_id == user_id, Cart.status == "open").order_by(Cart.id.desc()))
+        db.execute(
+            select(Cart)
+            .where(Cart.user_id == user_id, Cart.status == "open")
+            .order_by(Cart.id.desc())
+        )
         .scalars()
         .first()
     )
     if not cart:
-        return CartOut(cart_id=None, user_id=user_id, status="open", selected=0, project_ids=[])
+        return CartOut(
+            cart_id=None, user_id=user_id, status="open", selected=0, project_ids=[]
+        )
 
-    project_ids = db.execute(select(CartItem.org_name).where(CartItem.cart_id == cart.id)).scalars().all()
+    project_ids = (
+        db.execute(select(CartItem.org_name).where(CartItem.cart_id == cart.id))
+        .scalars()
+        .all()
+    )
     return CartOut(
         cart_id=cart.id,
         user_id=user_id,
@@ -345,14 +531,11 @@ def get_teammate_choices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    rows = (
-        db.execute(
-            select(TeammatePreference.student_id, TeammatePreference.preference).where(
-                TeammatePreference.user_id == current_user.id
-            )
+    rows = db.execute(
+        select(TeammatePreference.student_id, TeammatePreference.preference).where(
+            TeammatePreference.user_id == current_user.id
         )
-        .all()
-    )
+    ).all()
     want_ids = [sid for sid, pref in rows if pref == "want"]
     avoid_ids = [sid for sid, pref in rows if pref == "avoid"]
     return TeammateChoicesOut(want_ids=want_ids, avoid_ids=avoid_ids)
@@ -365,18 +548,32 @@ def set_teammate_choices(
     current_user: User = Depends(get_current_user),
 ):
     if len(payload.want_ids) > 5 or len(payload.avoid_ids) > 5:
-        raise HTTPException(status_code=400, detail="Each list must have at most 5 students")
+        raise HTTPException(
+            status_code=400, detail="Each list must have at most 5 students"
+        )
 
     if set(payload.want_ids) & set(payload.avoid_ids):
         raise HTTPException(status_code=400, detail="A student cannot be in both lists")
 
-    db.execute(select(TeammatePreference).where(TeammatePreference.user_id == current_user.id))
-    db.query(TeammatePreference).filter(TeammatePreference.user_id == current_user.id).delete()
+    db.execute(
+        select(TeammatePreference).where(TeammatePreference.user_id == current_user.id)
+    )
+    db.query(TeammatePreference).filter(
+        TeammatePreference.user_id == current_user.id
+    ).delete()
 
     for sid in payload.want_ids:
-        db.add(TeammatePreference(user_id=current_user.id, student_id=sid, preference="want"))
+        db.add(
+            TeammatePreference(
+                user_id=current_user.id, student_id=sid, preference="want"
+            )
+        )
     for sid in payload.avoid_ids:
-        db.add(TeammatePreference(user_id=current_user.id, student_id=sid, preference="avoid"))
+        db.add(
+            TeammatePreference(
+                user_id=current_user.id, student_id=sid, preference="avoid"
+            )
+        )
 
     db.commit()
     return TeammateChoicesOut(want_ids=payload.want_ids, avoid_ids=payload.avoid_ids)
@@ -401,13 +598,21 @@ def get_rankings(
     top_ids = [item.org_name for item in ranking_items]
 
     cart = (
-        db.execute(select(Cart).where(Cart.user_id == current_user.id, Cart.status == "open").order_by(Cart.id.desc()))
+        db.execute(
+            select(Cart)
+            .where(Cart.user_id == current_user.id, Cart.status == "open")
+            .order_by(Cart.id.desc())
+        )
         .scalars()
         .first()
     )
     cart_ids: list[str] = []
     if cart:
-        cart_ids = db.execute(select(CartItem.org_name).where(CartItem.cart_id == cart.id)).scalars().all()
+        cart_ids = (
+            db.execute(select(CartItem.org_name).where(CartItem.cart_id == cart.id))
+            .scalars()
+            .all()
+        )
 
     top_ids = [pid for pid in top_ids if pid in cart_ids]
     additional_ids = [pid for pid in cart_ids if pid not in top_ids]

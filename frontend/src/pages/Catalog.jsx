@@ -5,7 +5,7 @@ import {
   addCartItem,
   getCart,
   getFilters,
-  getProjects,
+  searchProjects,
   getStats,
   getUserSummary,
   removeCartItem,
@@ -117,6 +117,11 @@ export default function CatalogPage() {
     industries: [],
     company_sizes: [],
   })
+  const [selectedDomains, setSelectedDomains] = useState([])
+  const [selectedSkills, setSelectedSkills] = useState([])
+  const [selectedIndustries, setSelectedIndustries] = useState([])
+  const [matchMode, setMatchMode] = useState('and')
+  const [searchText, setSearchText] = useState('')
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [avgMatchScore, setAvgMatchScore] = useState(0)
@@ -124,12 +129,35 @@ export default function CatalogPage() {
   useEffect(() => {
     let cancelled = false
 
+    function mapProjects(list) {
+      return list.map((x) => ({
+        id: x.id,
+        domain: x.domain ?? '',
+        title: x.title,
+        description: x.description,
+        duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
+        tags: Array.isArray(x.tags) ? x.tags : [],
+        difficulty: x.difficulty ?? '—',
+        time:
+          x.min_hours_per_week && x.max_hours_per_week
+            ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
+            : '—',
+        modality: x.modality ?? '—',
+        organization: x.organization ?? '—',
+      }))
+    }
+
+    async function fetchProjects(payload = {}) {
+      const data = await searchProjects({ limit: 50, offset: 0, ...payload })
+      return mapProjects(data)
+    }
+
     async function load() {
       setLoading(true)
       try {
         const [s, p, f] = await Promise.all([
           getStats(),
-          getProjects({ limit: 50 }),
+          fetchProjects(),
           getFilters(),
         ])
         if (cancelled) return
@@ -137,23 +165,7 @@ export default function CatalogPage() {
         setStats(s)
         setFilters(f)
 
-        const mapped = p.map((x) => ({
-          id: x.id,
-          domain: x.domain ?? '',
-          title: x.title,
-          description: x.description,
-          duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
-          tags: Array.isArray(x.tags) ? x.tags : [],
-          difficulty: x.difficulty ?? '—',
-          time:
-            x.min_hours_per_week && x.max_hours_per_week
-              ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
-              : '—',
-          modality: x.modality ?? '—',
-          organization: x.organization ?? '—',
-        }))
-
-        setProjects(mapped)
+        setProjects(p)
 
         if (user) {
           const [c, summary] = await Promise.all([getCart(), getUserSummary()])
@@ -175,6 +187,55 @@ export default function CatalogPage() {
       cancelled = true
     }
   }, [user?.id])
+
+  async function applySearch({ domains, skills, industries, mode, q } = {}) {
+    setLoading(true)
+    try {
+      const payload = {
+        q: (q ?? searchText).trim() || undefined,
+        domains: domains ?? selectedDomains,
+        skills: skills ?? selectedSkills,
+        industries: industries ?? selectedIndustries,
+        match_mode: mode ?? matchMode,
+        limit: 50,
+        offset: 0,
+      }
+      const data = await searchProjects(payload)
+      setProjects(
+        data.map((x) => ({
+          id: x.id,
+          domain: x.domain ?? '',
+          title: x.title,
+          description: x.description,
+          duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
+          tags: Array.isArray(x.tags) ? x.tags : [],
+          difficulty: x.difficulty ?? '—',
+          time:
+            x.min_hours_per_week && x.max_hours_per_week
+              ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
+              : '—',
+          modality: x.modality ?? '—',
+          organization: x.organization ?? '—',
+        }))
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function toggleSelection(value, list, setter) {
+    const exists = list.includes(value)
+    const next = exists ? list.filter((item) => item !== value) : [...list, value]
+    setter(next)
+    return next
+  }
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      applySearch({ q: searchText })
+    }, 350)
+    return () => clearTimeout(handle)
+  }, [searchText])
 
   const curatedCount = useMemo(() => projects.length, [projects])
 
@@ -240,7 +301,14 @@ export default function CatalogPage() {
               <div className="relative w-full md:w-[420px]">
                 <input
                   className="input-base pl-10"
-                  placeholder="Try: ‘ML projects with NLP focus’ or ‘Sustainability analytics’..."
+                  placeholder="Try: ‘Finance’ or ‘Machine Learning’"
+                  value={searchText}
+                  onChange={(event) => setSearchText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      applySearch({ q: searchText })
+                    }
+                  }}
                 />
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔎</span>
               </div>
@@ -263,6 +331,39 @@ export default function CatalogPage() {
               <div className="card p-4">
                 <h2 className="text-lg font-heading text-duke-900">Filters</h2>
                 <p className="muted mt-1">Refine results by skill and logistics.</p>
+                <div className="mt-3 flex items-center gap-2 text-sm">
+                  <span className="text-slate-500">Match mode</span>
+                  <div className="inline-flex rounded-full border border-slate-200 p-1 bg-slate-50">
+                    <button
+                      type="button"
+                      className={
+                        matchMode === 'and'
+                          ? 'px-3 py-1 rounded-full bg-duke-900 text-white'
+                          : 'px-3 py-1 rounded-full text-slate-600'
+                      }
+                      onClick={() => {
+                        setMatchMode('and')
+                        applySearch({ mode: 'and' })
+                      }}
+                    >
+                      Match all
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        matchMode === 'or'
+                          ? 'px-3 py-1 rounded-full bg-duke-900 text-white'
+                          : 'px-3 py-1 rounded-full text-slate-600'
+                      }
+                      onClick={() => {
+                        setMatchMode('or')
+                        applySearch({ mode: 'or' })
+                      }}
+                    >
+                      Match any
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {(filters.domains.length > 0 || filters.skills.length > 0) && (
@@ -279,7 +380,23 @@ export default function CatalogPage() {
                           {filters.domains.map((d) => (
                             <span
                               key={d}
-                              className="px-3 py-1 rounded-full border border-duke-700 text-duke-700 text-sm"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                const next = toggleSelection(d, selectedDomains, setSelectedDomains)
+                                applySearch({ domains: next })
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  const next = toggleSelection(d, selectedDomains, setSelectedDomains)
+                                  applySearch({ domains: next })
+                                }
+                              }}
+                              className={
+                                selectedDomains.includes(d)
+                                  ? 'px-3 py-1 rounded-full bg-duke-900 text-white text-sm'
+                                  : 'px-3 py-1 rounded-full border border-duke-700 text-duke-700 text-sm'
+                              }
                             >
                               {d}
                             </span>
@@ -296,7 +413,23 @@ export default function CatalogPage() {
                           {filters.skills.slice(0, 6).map((skill) => (
                             <span
                               key={skill}
-                              className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  const next = toggleSelection(skill, selectedSkills, setSelectedSkills)
+                                  applySearch({ skills: next })
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    const next = toggleSelection(skill, selectedSkills, setSelectedSkills)
+                                    applySearch({ skills: next })
+                                  }
+                                }}
+                                className={
+                                  selectedSkills.includes(skill)
+                                    ? 'px-3 py-1 rounded-full bg-duke-900 text-white text-sm'
+                                    : 'px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-sm'
+                                }
                             >
                               {skill}
                             </span>
@@ -387,9 +520,21 @@ export default function CatalogPage() {
                     {filters.industries.length > 0 && (
                       <div>
                         <div className="label">Industry</div>
-                        <select className="select-base">
+                        <select
+                          className="select-base"
+                          value={selectedIndustries[0] ?? ''}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            const next = value ? [value] : []
+                            setSelectedIndustries(next)
+                            applySearch({ industries: next })
+                          }}
+                        >
+                          <option value="">All industries</option>
                           {filters.industries.map((industry) => (
-                            <option key={industry}>{industry}</option>
+                            <option key={industry} value={industry}>
+                              {industry}
+                            </option>
                           ))}
                         </select>
                       </div>
