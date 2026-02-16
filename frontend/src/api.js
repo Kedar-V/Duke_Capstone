@@ -92,10 +92,14 @@ export function getTeammateChoices() {
   return request('/api/teammate-choices')
 }
 
-export function saveTeammateChoices({ wantIds, avoidIds }) {
+export function saveTeammateChoices({ wantIds, avoidIds, avoidReasons }) {
   return request('/api/teammate-choices', {
     method: 'POST',
-    body: JSON.stringify({ want_ids: wantIds, avoid_ids: avoidIds }),
+    body: JSON.stringify({
+      want_ids: wantIds,
+      avoid_ids: avoidIds,
+      avoid_reasons: avoidReasons || {},
+    }),
   })
 }
 
@@ -107,5 +111,16 @@ export function saveRankings({ topTenIds }) {
   return request('/api/rankings', {
     method: 'POST',
     body: JSON.stringify({ top_ten_ids: topTenIds }),
+  })
+}
+
+export function getRatings() {
+  return request('/api/ratings')
+}
+
+export function saveRating({ projectId, rating }) {
+  return request('/api/ratings', {
+    method: 'POST',
+    body: JSON.stringify({ project_id: projectId, rating }),
   })
 }

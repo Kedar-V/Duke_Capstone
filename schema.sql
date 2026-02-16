@@ -63,10 +63,12 @@ create table if not exists students (
 create table if not exists teammate_preferences (
   id bigserial primary key,
   user_id bigint not null references users(id) on delete cascade,
-  student_id bigint not null references students(id) on delete cascade,
-  preference text not null check (preference in ('want','avoid')),
+  student_id_hash text not null,
+  payload_ciphertext text not null,
+  student_id bigint references students(id) on delete cascade,
+  preference text check (preference in ('want','avoid')),
   created_at timestamptz not null default now(),
-  unique (user_id, student_id)
+  unique (user_id, student_id_hash)
 );
 
 -- Cart (stores org_name from client_intake_forms)
@@ -103,6 +105,17 @@ create table if not exists ranking_items (
   added_at timestamptz not null default now(),
   primary key (ranking_id, org_name),
   unique (ranking_id, rank)
+);
+
+-- Ratings (per user, per project)
+create table if not exists ratings (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  org_name text not null references client_intake_forms(org_name) on delete cascade,
+  rating int not null check (rating between 1 and 5),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, org_name)
 );
 
 commit;

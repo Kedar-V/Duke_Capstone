@@ -29,6 +29,7 @@ export default function PartnersPage() {
   const [students, setStudents] = useState([])
   const [wantIds, setWantIds] = useState([])
   const [avoidIds, setAvoidIds] = useState([])
+  const [avoidReasons, setAvoidReasons] = useState({})
   const [selectedId, setSelectedId] = useState('')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -43,6 +44,7 @@ export default function PartnersPage() {
       setStudents(s)
       setWantIds(choices.want_ids || [])
       setAvoidIds(choices.avoid_ids || [])
+      setAvoidReasons(choices.avoid_reasons || {})
     }
 
     if (user) load()
@@ -71,13 +73,19 @@ export default function PartnersPage() {
     } else {
       if (avoidIds.length >= 5 || avoidIds.includes(id) || wantIds.includes(id)) return
       setAvoidIds([...avoidIds, id])
+      setAvoidReasons({ ...avoidReasons, [id]: avoidReasons[id] || '' })
     }
     setSelectedId('')
   }
 
   function handleRemove(target, id) {
     if (target === 'want') setWantIds(wantIds.filter((x) => x !== id))
-    if (target === 'avoid') setAvoidIds(avoidIds.filter((x) => x !== id))
+    if (target === 'avoid') {
+      setAvoidIds(avoidIds.filter((x) => x !== id))
+      const next = { ...avoidReasons }
+      delete next[id]
+      setAvoidReasons(next)
+    }
   }
 
   function onDragStart(id) {
@@ -106,7 +114,7 @@ export default function PartnersPage() {
     setSaving(true)
     setMessage('')
     try {
-      await saveTeammateChoices({ wantIds, avoidIds })
+      await saveTeammateChoices({ wantIds, avoidIds, avoidReasons })
       setMessage('Saved teammate choices.')
     } catch (err) {
       setMessage(String(err?.message || 'Save failed'))
@@ -169,7 +177,7 @@ export default function PartnersPage() {
         <div className="grid grid-cols-1 gap-6">
           <SectionCard
             title="Teammate Choices"
-            subtitle="Drag and drop students here (max 5)."
+            subtitle="Add people you want to work with here"
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => onDrop('want')}
           >
@@ -205,7 +213,7 @@ export default function PartnersPage() {
 
           <SectionCard
             title="Don’t Work With"
-            subtitle="Drag and drop students here (max 5)."
+            subtitle="Add people you dont want to work with here"
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => onDrop('avoid')}
           >
@@ -225,6 +233,18 @@ export default function PartnersPage() {
                     <div>
                       <div className="font-medium">{student.full_name}</div>
                       <div className="text-xs text-rose-700">{student.program}</div>
+                      <textarea
+                        className="input-base mt-2 text-xs"
+                        rows={2}
+                        placeholder="Reason (optional)"
+                        value={avoidReasons[id] || ''}
+                        onChange={(event) =>
+                          setAvoidReasons({
+                            ...avoidReasons,
+                            [id]: event.target.value,
+                          })
+                        }
+                      />
                     </div>
                     <button
                       type="button"

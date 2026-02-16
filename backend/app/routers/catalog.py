@@ -1,16 +1,20 @@
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..crypto import decrypt_teammate_choice, encrypt_teammate_choice
 from ..db import get_db
 from ..models import (
     Cart,
     CartItem,
     ClientIntakeForm,
+    Rating,
     Ranking,
     RankingItem,
     Student,
@@ -28,6 +32,8 @@ from ..schemas import (
     ProjectOut,
     RankingsIn,
     RankingsOut,
+    RatingIn,
+    RatingOut,
     SkillOut,
     StatsOut,
     StudentOut,
@@ -38,6 +44,59 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api", tags=["catalog"])
+logger = logging.getLogger(__name__)
+
+_teammate_prefs_schema_ready = False
+_ratings_schema_ready = False
+
+
+def _ensure_teammate_prefs_schema(db: Session) -> None:
+    global _teammate_prefs_schema_ready
+    if _teammate_prefs_schema_ready:
+        return
+
+    db.execute(
+        text(
+            "ALTER TABLE teammate_preferences ADD COLUMN IF NOT EXISTS student_id_hash text"
+        )
+    )
+    db.execute(
+        text(
+            "ALTER TABLE teammate_preferences ADD COLUMN IF NOT EXISTS payload_ciphertext text"
+        )
+    )
+    db.execute(
+        text("ALTER TABLE teammate_preferences ALTER COLUMN student_id DROP NOT NULL")
+    )
+    db.execute(
+        text("ALTER TABLE teammate_preferences ALTER COLUMN preference DROP NOT NULL")
+    )
+    db.commit()
+    _teammate_prefs_schema_ready = True
+
+
+def _ensure_ratings_schema(db: Session) -> None:
+    global _ratings_schema_ready
+    if _ratings_schema_ready:
+        return
+
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS ratings (
+              id bigserial PRIMARY KEY,
+              user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              org_name text NOT NULL REFERENCES client_intake_forms(org_name) ON DELETE CASCADE,
+              rating int NOT NULL CHECK (rating between 1 and 5),
+              created_at timestamptz NOT NULL DEFAULT now(),
+              updated_at timestamptz NOT NULL DEFAULT now(),
+              UNIQUE (user_id, org_name)
+            )
+            """
+        )
+    )
+    db.commit()
+    _ratings_schema_ready = True
 
 
 @router.get("/organizations", response_model=List[OrganizationOut])
@@ -531,14 +590,41 @@ def get_teammate_choices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _ensure_teammate_prefs_schema(db)
     rows = db.execute(
-        select(TeammatePreference.student_id, TeammatePreference.preference).where(
-            TeammatePreference.user_id == current_user.id
-        )
+        select(
+            TeammatePreference.payload_ciphertext,
+            TeammatePreference.student_id,
+            TeammatePreference.preference,
+        ).where(TeammatePreference.user_id == current_user.id)
     ).all()
-    want_ids = [sid for sid, pref in rows if pref == "want"]
-    avoid_ids = [sid for sid, pref in rows if pref == "avoid"]
-    return TeammateChoicesOut(want_ids=want_ids, avoid_ids=avoid_ids)
+    want_ids: list[int] = []
+    avoid_ids: list[int] = []
+    avoid_reasons: dict[int, str] = {}
+    for payload_ciphertext, student_id, preference in rows:
+        if payload_ciphertext:
+            try:
+                payload = decrypt_teammate_choice(payload_ciphertext)
+            except Exception as exc:
+                logger.exception("Failed to decrypt teammate preference")
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            student_id = payload.get("student_id")
+            preference = payload.get("preference")
+            avoid_reason = payload.get("avoid_reason")
+        else:
+            avoid_reason = None
+
+        if not student_id or not preference:
+            continue
+        if preference == "want":
+            want_ids.append(int(student_id))
+        if preference == "avoid":
+            avoid_ids.append(int(student_id))
+            if avoid_reason:
+                avoid_reasons[int(student_id)] = str(avoid_reason)
+    return TeammateChoicesOut(
+        want_ids=want_ids, avoid_ids=avoid_ids, avoid_reasons=avoid_reasons
+    )
 
 
 @router.post("/teammate-choices", response_model=TeammateChoicesOut)
@@ -547,6 +633,7 @@ def set_teammate_choices(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _ensure_teammate_prefs_schema(db)
     if len(payload.want_ids) > 5 or len(payload.avoid_ids) > 5:
         raise HTTPException(
             status_code=400, detail="Each list must have at most 5 students"
@@ -563,20 +650,78 @@ def set_teammate_choices(
     ).delete()
 
     for sid in payload.want_ids:
+        try:
+            ciphertext, student_hash = encrypt_teammate_choice(sid, "want")
+        except Exception as exc:
+            logger.exception("Failed to encrypt teammate preference")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         db.add(
             TeammatePreference(
-                user_id=current_user.id, student_id=sid, preference="want"
+                user_id=current_user.id,
+                student_id_hash=student_hash,
+                payload_ciphertext=ciphertext,
             )
         )
     for sid in payload.avoid_ids:
+        try:
+            reason = payload.avoid_reasons.get(sid) or ""
+            ciphertext, student_hash = encrypt_teammate_choice(sid, "avoid", reason)
+        except Exception as exc:
+            logger.exception("Failed to encrypt teammate preference")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         db.add(
             TeammatePreference(
-                user_id=current_user.id, student_id=sid, preference="avoid"
+                user_id=current_user.id,
+                student_id_hash=student_hash,
+                payload_ciphertext=ciphertext,
             )
         )
 
     db.commit()
-    return TeammateChoicesOut(want_ids=payload.want_ids, avoid_ids=payload.avoid_ids)
+    return TeammateChoicesOut(
+        want_ids=payload.want_ids,
+        avoid_ids=payload.avoid_ids,
+        avoid_reasons=payload.avoid_reasons,
+    )
+
+
+@router.get("/ratings", response_model=List[RatingOut])
+def get_ratings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_ratings_schema(db)
+    rows = db.execute(
+        select(Rating.org_name, Rating.rating).where(Rating.user_id == current_user.id)
+    ).all()
+    return [RatingOut(project_id=org_name, rating=rating) for org_name, rating in rows]
+
+
+@router.post("/ratings", response_model=RatingOut)
+def save_rating(
+    payload: RatingIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_ratings_schema(db)
+    if payload.rating < 1 or payload.rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    stmt = (
+        insert(Rating)
+        .values(
+            user_id=current_user.id,
+            org_name=payload.project_id,
+            rating=payload.rating,
+        )
+        .on_conflict_do_update(
+            index_elements=[Rating.user_id, Rating.org_name],
+            set_={"rating": payload.rating, "updated_at": func.now()},
+        )
+    )
+    db.execute(stmt)
+    db.commit()
+    return RatingOut(project_id=payload.project_id, rating=payload.rating)
 
 
 @router.get("/rankings", response_model=RankingsOut)

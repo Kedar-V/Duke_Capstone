@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -89,11 +89,13 @@ class StudentOut(BaseModel):
 class TeammateChoicesIn(BaseModel):
     want_ids: List[int] = Field(default_factory=list)
     avoid_ids: List[int] = Field(default_factory=list)
+    avoid_reasons: Dict[int, str] = Field(default_factory=dict)
 
 
 class TeammateChoicesOut(BaseModel):
     want_ids: List[int] = Field(default_factory=list)
     avoid_ids: List[int] = Field(default_factory=list)
+    avoid_reasons: Dict[int, str] = Field(default_factory=dict)
 
 
 class FilterOptionsOut(BaseModel):
@@ -141,6 +143,16 @@ class RankingsOut(BaseModel):
 
 class RankingsIn(BaseModel):
     top_ten_ids: List[str] = Field(default_factory=list)
+
+
+class RatingIn(BaseModel):
+    project_id: str
+    rating: int
+
+
+class RatingOut(BaseModel):
+    project_id: str
+    rating: int
 
 
 class SearchProjectsIn(BaseModel):

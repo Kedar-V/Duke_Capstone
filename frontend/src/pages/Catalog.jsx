@@ -5,62 +5,44 @@ import {
   addCartItem,
   getCart,
   getFilters,
+  getRatings,
   searchProjects,
   getStats,
   getUserSummary,
   removeCartItem,
+  saveRating,
 } from '../api'
 import { clearAuth, getUser } from '../auth'
 
-function Stars() {
+function Stars({ rating, onRate }) {
   return (
     <div className="mt-3 flex items-center gap-1">
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 1 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 2 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 3 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 4 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 5 stars"
-      >
-        ★
-      </button>
+      {[1, 2, 3, 4, 5].map((value) => (
+        <button
+          key={value}
+          type="button"
+          className={
+            value <= rating
+              ? 'text-lg transition text-amber-400 hover:scale-110'
+              : 'text-lg transition text-slate-300 hover:scale-110'
+          }
+          aria-label={`Rate ${value} stars`}
+          onClick={() => onRate(value)}
+        >
+          ★
+        </button>
+      ))}
     </div>
   )
 }
 
-function ProjectCard({ project, inCart, onToggleCart }) {
+function ProjectCard({ project, inCart, onToggleCart, rating, onRate }) {
   return (
     <div className="card p-5 flex flex-col gap-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <span className="pill">{project.domain}</span>
-          <Stars />
+          <Stars rating={rating} onRate={onRate} />
           <h3 className="text-lg font-semibold text-duke-900 mt-3">{project.title}</h3>
           <p className="muted mt-2">{project.description}</p>
         </div>
@@ -125,6 +107,7 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [avgMatchScore, setAvgMatchScore] = useState(0)
+  const [ratings, setRatings] = useState({})
 
   useEffect(() => {
     let cancelled = false
@@ -168,14 +151,24 @@ export default function CatalogPage() {
         setProjects(p)
 
         if (user) {
-          const [c, summary] = await Promise.all([getCart(), getUserSummary()])
+          const [c, summary, r] = await Promise.all([
+            getCart(),
+            getUserSummary(),
+            getRatings(),
+          ])
           if (!cancelled) {
             setCart(c)
             setAvgMatchScore(summary.avg_match_score)
+            const map = {}
+            r.forEach((item) => {
+              map[item.project_id] = item.rating
+            })
+            setRatings(map)
           }
         } else {
           setCart({ selected: 0, limit: 10 })
           setAvgMatchScore(0)
+          setRatings({})
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -256,6 +249,15 @@ export default function CatalogPage() {
     clearAuth()
     setCart({ selected: 0, limit: 10 })
     navigate('/', { replace: true })
+  }
+
+  async function handleRate(projectId, value) {
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    setRatings((prev) => ({ ...prev, [projectId]: value }))
+    await saveRating({ projectId, rating: value })
   }
 
   return (
@@ -566,16 +568,12 @@ export default function CatalogPage() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="text-sm text-slate-500">Welcome {user?.display_name || user?.email || '<PRIVATE_PERSON>'}</div>
-                  <div className="text-xl font-heading text-duke-900">Your curated capstone list</div>
+                  <div className="text-xl font-heading text-duke-900">Available capstone projects</div>
                   <div className="text-sm text-slate-500 mt-1">
-                    Showing <span className="font-semibold">{curatedCount}</span> curated projects based on your profile.
+                    Showing <span className="font-semibold">{curatedCount}</span> projects currently available.
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <div className="card px-4 py-3">
-                    <div className="text-xs text-slate-500">Average match</div>
-                    <div className="text-2xl font-semibold text-duke-900">{avgMatchScore}%</div>
-                  </div>
                   <div className="card px-4 py-3">
                     <div className="text-xs text-slate-500">Selected</div>
                     <div className="text-2xl font-semibold text-duke-900">
@@ -600,7 +598,6 @@ export default function CatalogPage() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-slate-600">Sort by</span>
                 <select className="select-base">
-                  <option>Best match</option>
                   <option>Newest</option>
                   <option>Highest rated</option>
                 </select>
@@ -617,6 +614,8 @@ export default function CatalogPage() {
                     project={p}
                     inCart={cart.project_ids?.includes(p.id)}
                     onToggleCart={handleToggleCart}
+                    rating={ratings[p.id] || 0}
+                    onRate={(value) => handleRate(p.id, value)}
                   />
                 ))}
               </div>

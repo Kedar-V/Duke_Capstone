@@ -83,6 +83,43 @@ docker compose --env-file .env up --build
 
 To apply schema/seed to RDS, use `aws_connect.ipynb` (schema cell then seed cell).
 
+## Teammate Preferences Encryption
+
+Teammate preference selections are stored encrypted at rest in `teammate_preferences`.
+
+Set a key in your environment (required for API + backfill):
+
+```bash
+export TEAMMATE_PREFS_KEY="<fernet-key>"
+```
+
+Generate a key locally:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Backfill legacy rows (run once per database):
+
+```bash
+python backend/scripts/backfill_teammate_preferences.py
+```
+
+## Load Students from CSV
+
+Use the bundled CSV (or provide your own) to seed the `students` table.
+
+```bash
+python backend/scripts/load_students_from_csv.py
+```
+
+To override the CSV path:
+
+```bash
+export STUDENTS_CSV="/path/to/students.csv"
+python backend/scripts/load_students_from_csv.py
+```
+
 ## Database Schema (PostgreSQL)
 
 This schema supports:
