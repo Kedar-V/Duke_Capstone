@@ -70,6 +70,17 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo yum install -y docker || sudo apt-get update && sudo apt-get install -y docker.io
+              sudo systemctl enable docker
+              sudo systemctl start docker
+              sudo usermod -aG docker ec2-user
+            fi
+
+            if ! command -v docker-compose >/dev/null 2>&1; then
+              sudo yum install -y docker-compose || sudo apt-get update && sudo apt-get install -y docker-compose
+            fi
+
             cd /home/ec2-user/app
             docker-compose down
             docker-compose build
