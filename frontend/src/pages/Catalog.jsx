@@ -121,6 +121,7 @@ export default function CatalogPage() {
   const [selectedSkills, setSelectedSkills] = useState([])
   const [selectedIndustries, setSelectedIndustries] = useState([])
   const [matchMode, setMatchMode] = useState('and')
+  const [searchText, setSearchText] = useState('')
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [avgMatchScore, setAvgMatchScore] = useState(0)
@@ -187,10 +188,11 @@ export default function CatalogPage() {
     }
   }, [user?.id])
 
-  async function applySearch({ domains, skills, industries, mode } = {}) {
+  async function applySearch({ domains, skills, industries, mode, q } = {}) {
     setLoading(true)
     try {
       const payload = {
+        q: (q ?? searchText).trim() || undefined,
         domains: domains ?? selectedDomains,
         skills: skills ?? selectedSkills,
         industries: industries ?? selectedIndustries,
@@ -227,6 +229,13 @@ export default function CatalogPage() {
     setter(next)
     return next
   }
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      applySearch({ q: searchText })
+    }, 350)
+    return () => clearTimeout(handle)
+  }, [searchText])
 
   const curatedCount = useMemo(() => projects.length, [projects])
 
@@ -292,7 +301,14 @@ export default function CatalogPage() {
               <div className="relative w-full md:w-[420px]">
                 <input
                   className="input-base pl-10"
-                  placeholder="Try: ‘ML projects with NLP focus’ or ‘Sustainability analytics’..."
+                  placeholder="Try: ‘Finance’ or ‘Machine Learning’"
+                  value={searchText}
+                  onChange={(event) => setSearchText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      applySearch({ q: searchText })
+                    }
+                  }}
                 />
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔎</span>
               </div>
