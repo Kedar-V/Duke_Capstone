@@ -162,7 +162,7 @@ export default function RankingsPage() {
                 ✕
               </button>
             </div>
-            <div className="mt-2">{popup.text}</div>
+            <div className="mt-2 text-justify">{popup.text}</div>
           </div>
         </div>
       ) : null}

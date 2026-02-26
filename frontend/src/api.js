@@ -30,6 +30,10 @@ export function getProjects(params = {}) {
   return request(`/api/projects${suffix}`)
 }
 
+export function getProject(projectId) {
+  return request(`/api/projects/${encodeURIComponent(projectId)}`)
+}
+
 export function searchProjects(payload = {}) {
   return request('/api/search/projects', {
     method: 'POST',

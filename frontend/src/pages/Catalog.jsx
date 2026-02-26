@@ -28,7 +28,10 @@ function Stars({ rating, onRate }) {
               : 'text-lg transition text-slate-300 hover:scale-110'
           }
           aria-label={`Rate ${value} stars`}
-          onClick={() => onRate(value)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onRate(value)
+          }}
         >
           ★
         </button>
@@ -37,9 +40,17 @@ function Stars({ rating, onRate }) {
   )
 }
 
-function ProjectCard({ project, inCart, onToggleCart, rating, onRate }) {
+function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen }) {
   return (
-    <div className="card p-5 flex flex-col gap-4">
+    <div
+      className="card p-5 flex flex-col gap-4 cursor-pointer"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onOpen()
+      }}
+    >
       <div className="flex items-start justify-between gap-4">
         <div>
           <span className="pill">{project.domain}</span>
@@ -63,13 +74,28 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate }) {
       </div>
       <div className="flex items-center justify-between">
         <div className="text-sm text-slate-500">Sponsored by {project.organization}</div>
-        <button
-          type="button"
-          className={inCart ? 'btn-secondary flex items-center gap-2' : 'btn-primary'}
-          onClick={() => onToggleCart(project.id, inCart)}
-        >
-          {inCart ? 'Remove from cart' : 'Add to cart'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpen()
+            }}
+          >
+            View more
+          </button>
+          <button
+            type="button"
+            className={inCart ? 'btn-secondary flex items-center gap-2' : 'btn-primary'}
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleCart(project.id, inCart)
+            }}
+          >
+            {inCart ? 'Remove from cart' : 'Add to cart'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -600,6 +626,7 @@ export default function CatalogPage() {
                     onToggleCart={handleToggleCart}
                     rating={ratings[p.id] || 0}
                     onRate={(value) => handleRate(p.id, value)}
+                    onOpen={() => navigate(`/projects/${encodeURIComponent(p.id)}`)}
                   />
                 ))}
               </div>

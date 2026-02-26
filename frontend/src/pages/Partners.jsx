@@ -175,7 +175,7 @@ export default function PartnersPage() {
               {saving ? 'Saving…' : 'Save choices'}
             </button>
           </div>
-          {message ? <div className="mt-3 text-sm text-slate-600">{message}</div> : null}
+          {message ? <div className="mt-3 text-sm text-slate-600 text-justify">{message}</div> : null}
         </div>
 
         <div className="grid grid-cols-1 gap-6">

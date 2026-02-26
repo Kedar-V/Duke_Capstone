@@ -29,6 +29,7 @@ from ..schemas import (
     FilterOptionsOut,
     OrganizationOut,
     ProjectCardOut,
+    ProjectDetailOut,
     ProjectOut,
     RankingsIn,
     RankingsOut,
@@ -295,6 +296,52 @@ def list_projects(
         )
 
     return out
+
+
+@router.get("/projects/{project_id}", response_model=ProjectDetailOut)
+def get_project(project_id: str, db: Session = Depends(get_db)):
+    row = (
+        db.execute(
+            select(ClientIntakeForm).where(ClientIntakeForm.org_name == project_id)
+        )
+        .scalars()
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    def to_list(value) -> list[str]:
+        if isinstance(value, list):
+            return [str(v) for v in value if v]
+        if value:
+            return [str(value)]
+        return []
+
+    return ProjectDetailOut(
+        id=row.org_name,
+        organization=row.org_name,
+        title=row.project_title or row.org_name,
+        summary=row.project_summary,
+        description=row.project_description or row.project_summary,
+        org_industry=row.org_industry,
+        org_industry_other=row.org_industry_other,
+        org_website=row.org_website,
+        minimum_deliverables=row.minimum_deliverables,
+        stretch_goals=row.stretch_goals,
+        long_term_impact=row.long_term_impact,
+        scope_clarity=row.scope_clarity,
+        scope_clarity_other=row.scope_clarity_other,
+        publication_potential=row.publication_potential,
+        data_access=row.data_access,
+        project_sector=row.project_sector,
+        required_skills=to_list(row.required_skills),
+        required_skills_other=row.required_skills_other,
+        technical_domains=to_list(row.technical_domains),
+        supplementary_documents=to_list(row.supplementary_documents),
+        video_links=to_list(row.video_links),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 @router.post("/search/projects", response_model=List[ProjectOut])

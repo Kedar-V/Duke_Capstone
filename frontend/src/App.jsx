@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import CatalogPage from './pages/Catalog'
 import LoginPage from './pages/Login'
 import PartnersPage from './pages/Partners'
+import ProjectDisplayPage from './pages/ProjectDisplay'
 import RankingsPage from './pages/Rankings'
 import { getToken } from './auth'
 
@@ -16,6 +17,10 @@ export default function App() {
       <Route
         path="/projects"
         element={isAuthed ? <CatalogPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/projects/:projectId"
+        element={isAuthed ? <ProjectDisplayPage /> : <Navigate to="/login" replace />}
       />
       <Route
         path="/partners"
