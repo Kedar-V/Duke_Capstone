@@ -13,6 +13,7 @@ import {
   saveRating,
 } from '../api'
 import { clearAuth, getUser } from '../auth'
+import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 function Stars({ rating, onRate }) {
   return (
@@ -109,26 +110,26 @@ export default function CatalogPage() {
   const [avgMatchScore, setAvgMatchScore] = useState(0)
   const [ratings, setRatings] = useState({})
 
+  function mapProjects(list) {
+    return list.map((x) => ({
+      id: x.id,
+      domain: x.domain ?? '',
+      title: x.title,
+      description: x.description,
+      duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
+      tags: Array.isArray(x.tags) ? x.tags : [],
+      difficulty: x.difficulty ?? '—',
+      time:
+        x.min_hours_per_week && x.max_hours_per_week
+          ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
+          : '—',
+      modality: x.modality ?? '—',
+      organization: x.organization ?? '—',
+    }))
+  }
+
   useEffect(() => {
     let cancelled = false
-
-    function mapProjects(list) {
-      return list.map((x) => ({
-        id: x.id,
-        domain: x.domain ?? '',
-        title: x.title,
-        description: x.description,
-        duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
-        tags: Array.isArray(x.tags) ? x.tags : [],
-        difficulty: x.difficulty ?? '—',
-        time:
-          x.min_hours_per_week && x.max_hours_per_week
-            ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
-            : '—',
-        modality: x.modality ?? '—',
-        organization: x.organization ?? '—',
-      }))
-    }
 
     async function fetchProjects(payload = {}) {
       const data = await searchProjects({ limit: 50, offset: 0, ...payload })
@@ -179,13 +180,13 @@ export default function CatalogPage() {
     return () => {
       cancelled = true
     }
-  }, [user?.id])
+  }, [])
 
   async function applySearch({ domains, skills, industries, mode, q } = {}) {
     setLoading(true)
     try {
       const payload = {
-        q: (q ?? searchText).trim() || undefined,
+        q: q ?? searchText,
         domains: domains ?? selectedDomains,
         skills: skills ?? selectedSkills,
         industries: industries ?? selectedIndustries,
@@ -194,23 +195,7 @@ export default function CatalogPage() {
         offset: 0,
       }
       const data = await searchProjects(payload)
-      setProjects(
-        data.map((x) => ({
-          id: x.id,
-          domain: x.domain ?? '',
-          title: x.title,
-          description: x.description,
-          duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
-          tags: Array.isArray(x.tags) ? x.tags : [],
-          difficulty: x.difficulty ?? '—',
-          time:
-            x.min_hours_per_week && x.max_hours_per_week
-              ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
-              : '—',
-          modality: x.modality ?? '—',
-          organization: x.organization ?? '—',
-        }))
-      )
+      setProjects(mapProjects(data))
     } finally {
       setLoading(false)
     }
@@ -265,9 +250,8 @@ export default function CatalogPage() {
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
         <div className="card p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-3xl font-heading text-duke-900">Capstone Projects</h1>
-              <p className="muted mt-1">Explore capstone opportunities tailored to your skills.</p>
+            <div className="flex items-center">
+              <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
             </div>
             <div className="flex items-center gap-3 relative">
               <button

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { getStudents, getTeammateChoices, saveTeammateChoices } from '../api'
 import { getUser } from '../auth'
+import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 function SectionCard({ title, subtitle, children, onDrop, onDragOver }) {
   return (
@@ -126,6 +127,9 @@ export default function PartnersPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
+        <div className="flex justify-center sm:justify-start">
+          <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+        </div>
         <div className="card p-6">
           <div className="flex items-center justify-between">
             <div>

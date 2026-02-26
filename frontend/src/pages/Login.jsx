@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { login, register } from '../api'
 import { setAuth } from '../auth'
+import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -46,6 +47,9 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-md mx-auto px-4 py-16">
+        <div className="flex justify-center mb-6">
+          <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+        </div>
         <div className="card p-6">
           <h1 className="text-2xl font-heading text-duke-900">
             {mode === 'register' ? 'Create account' : 'Sign in'}

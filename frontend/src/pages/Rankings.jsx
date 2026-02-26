@@ -1,14 +1,37 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getRankings, removeCartItem, saveRankings } from '../api'
+import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 export default function RankingsPage() {
   const [additionalSelections, setAdditionalSelections] = useState([])
   const [topTen, setTopTen] = useState([])
   const [dragItem, setDragItem] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [popup, setPopup] = useState(null)
+  const popupTimerRef = useRef(null)
 
   useEffect(() => {
     refreshRankings()
   }, [])
+
+  useEffect(() => {
+    return () => {
+      if (popupTimerRef.current) {
+        clearTimeout(popupTimerRef.current)
+      }
+    }
+  }, [])
+
+  function showPopup(type, text) {
+    setPopup({ type, text })
+    if (popupTimerRef.current) {
+      clearTimeout(popupTimerRef.current)
+    }
+    popupTimerRef.current = setTimeout(() => {
+      setPopup(null)
+      popupTimerRef.current = null
+    }, 3000)
+  }
 
   function refreshRankings() {
     return getRankings()
@@ -29,8 +52,21 @@ export default function RankingsPage() {
       })
   }
 
-  async function persistTopTen(list) {
-    await saveRankings({ topTenIds: list.map((item) => item.id) })
+  async function handleSubmit() {
+    if (topTen.length !== 10) {
+      showPopup('error', 'You must rank 10 projects before submitting.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await saveRankings({ topTenIds: topTen.map((item) => item.id) })
+      showPopup('success', 'Submitted rankings.')
+      await refreshRankings()
+    } catch (err) {
+      showPopup('error', String(err?.message || 'Submit failed'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   function onDragStart(listName, index) {
@@ -40,6 +76,12 @@ export default function RankingsPage() {
   function onDrop(listName, index) {
     if (!dragItem) return
 
+    if (listName === 'top' && dragItem.listName === 'additional' && topTen.length >= 10) {
+      setDragItem(null)
+      showPopup('error', 'Top 10 is already full.')
+      return
+    }
+
     if (dragItem.listName === listName) {
       const list = listName === 'top' ? [...topTen] : [...additionalSelections]
       const [moved] = list.splice(dragItem.index, 1)
@@ -47,7 +89,6 @@ export default function RankingsPage() {
       list.splice(insertIndex, 0, moved)
       if (listName === 'top') {
         setTopTen(list)
-        persistTopTen(list)
       } else {
         setAdditionalSelections(list)
       }
@@ -63,14 +104,12 @@ export default function RankingsPage() {
 
     if (dragItem.listName === 'top') {
       setTopTen(fromList)
-      persistTopTen(fromList)
     } else {
       setAdditionalSelections(fromList)
     }
 
     if (listName === 'top') {
       setTopTen(toList)
-      persistTopTen(toList)
     } else {
       setAdditionalSelections(toList)
     }
@@ -94,7 +133,43 @@ export default function RankingsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-48">
+      {popup ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/30"
+          role="presentation"
+          onClick={() => setPopup(null)}
+        >
+          <div
+            role="alert"
+            aria-live="assertive"
+            className={`card w-[min(520px,calc(100vw-2rem))] px-4 py-4 text-sm pointer-events-auto ${
+              popup.type === 'error'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="font-semibold">
+                {popup.type === 'error' ? 'Warning' : 'Success'}
+              </div>
+              <button
+                type="button"
+                className="text-current/70 hover:text-current"
+                aria-label="Close"
+                onClick={() => setPopup(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-2">{popup.text}</div>
+          </div>
+        </div>
+      ) : null}
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
+        <div className="flex justify-center sm:justify-start">
+          <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+        </div>
         <div>
           <h1 className="text-3xl font-heading text-duke-900">Capstone Project Ranking</h1>
           <p className="muted mt-2">Reorder your selected projects to finalize your ranking.</p>
@@ -146,7 +221,17 @@ export default function RankingsPage() {
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-heading text-duke-900">Your Top 10 Choices (Ranked)</h3>
-            <div className="text-sm text-slate-500">{topTen.length}/10 ranked</div>
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-slate-500">{topTen.length}/10 ranked</div>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleSubmit}
+                disabled={submitting}
+              >
+                {submitting ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
           </div>
           <div
             className="mt-3 flex items-center gap-3 overflow-x-auto pb-2"
