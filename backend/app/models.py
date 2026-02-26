@@ -190,7 +190,7 @@ class Rating(Base):
     __tablename__ = "ratings"
     __table_args__ = (
         UniqueConstraint("user_id", "org_name", name="uq_ratings_user_project"),
-        CheckConstraint("rating between 1 and 5", name="ck_ratings_rating"),
+        CheckConstraint("rating between 1 and 10", name="ck_ratings_rating"),
     )
 
     id = Column(BigInteger, primary_key=True)

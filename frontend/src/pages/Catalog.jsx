@@ -18,7 +18,7 @@ import midsLogo from '../assets/mids-logo-white-bg.svg'
 function Stars({ rating, onRate }) {
   return (
     <div className="mt-3 flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((value) => (
+      {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
         <button
           key={value}
           type="button"
@@ -113,6 +113,9 @@ export default function CatalogPage() {
   const navigate = useNavigate()
   const user = getUser()
 
+  const PAGE_SIZE = 5
+  const FETCH_LIMIT = PAGE_SIZE + 1
+
   const [projects, setProjects] = useState([])
   const [stats, setStats] = useState({ active_projects: 0, new_this_week: 0 })
   const [cart, setCart] = useState({ selected: 0, limit: 10 })
@@ -135,6 +138,8 @@ export default function CatalogPage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [avgMatchScore, setAvgMatchScore] = useState(0)
   const [ratings, setRatings] = useState({})
+  const [page, setPage] = useState(0)
+  const [hasNext, setHasNext] = useState(false)
 
   function mapProjects(list) {
     return list.map((x) => ({
@@ -154,20 +159,21 @@ export default function CatalogPage() {
     }))
   }
 
+  function setPagedProjects(raw) {
+    const mapped = mapProjects(raw)
+    setHasNext(mapped.length > PAGE_SIZE)
+    setProjects(mapped.slice(0, PAGE_SIZE))
+  }
+
   useEffect(() => {
     let cancelled = false
-
-    async function fetchProjects(payload = {}) {
-      const data = await searchProjects({ limit: 50, offset: 0, ...payload })
-      return mapProjects(data)
-    }
 
     async function load() {
       setLoading(true)
       try {
         const [s, p, f] = await Promise.all([
           getStats(),
-          fetchProjects(),
+          searchProjects({ limit: FETCH_LIMIT, offset: 0 }),
           getFilters(),
         ])
         if (cancelled) return
@@ -175,7 +181,8 @@ export default function CatalogPage() {
         setStats(s)
         setFilters(f)
 
-        setProjects(p)
+        setPage(0)
+        setPagedProjects(p)
 
         if (user) {
           const [c, summary, r] = await Promise.all([
@@ -208,20 +215,22 @@ export default function CatalogPage() {
     }
   }, [])
 
-  async function applySearch({ domains, skills, industries, mode, q } = {}) {
+  async function applySearch({ domains, skills, industries, mode, q, pageIndex } = {}) {
     setLoading(true)
     try {
+      const nextPage = Math.max(0, Number.isFinite(pageIndex) ? pageIndex : page)
       const payload = {
         q: q ?? searchText,
         domains: domains ?? selectedDomains,
         skills: skills ?? selectedSkills,
         industries: industries ?? selectedIndustries,
         match_mode: mode ?? matchMode,
-        limit: 50,
-        offset: 0,
+        limit: FETCH_LIMIT,
+        offset: nextPage * PAGE_SIZE,
       }
       const data = await searchProjects(payload)
-      setProjects(mapProjects(data))
+      setPage(nextPage)
+      setPagedProjects(data)
     } finally {
       setLoading(false)
     }
@@ -236,7 +245,8 @@ export default function CatalogPage() {
 
   useEffect(() => {
     const handle = setTimeout(() => {
-      applySearch({ q: searchText })
+      setPage(0)
+      applySearch({ q: searchText, pageIndex: 0 })
     }, 350)
     return () => clearTimeout(handle)
   }, [searchText])
@@ -276,40 +286,44 @@ export default function CatalogPage() {
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
         <div className="card p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button
+                  type="button"
+                  className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
+                  aria-label="Open menu"
+                  onClick={() => setMenuOpen((v) => !v)}
+                >
+                  ☰
+                </button>
+                {menuOpen ? (
+                  <div className="absolute left-0 top-full mt-2 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
+                    <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
+                      Sections
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {["Teammate Choices", "Projects", "Rankings"].map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
+                          onClick={() => {
+                            setMenuOpen(false)
+                            if (label === 'Teammate Choices') navigate('/partners')
+                            if (label === 'Projects') navigate('/projects')
+                            if (label === 'Rankings') navigate('/rankings')
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
             </div>
-            <div className="flex items-center gap-3 relative">
-              <button
-                type="button"
-                className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
-                aria-label="Open menu"
-                onClick={() => setMenuOpen((v) => !v)}
-              >
-                ☰
-              </button>
-              {menuOpen ? (
-                <div className="absolute right-0 top-12 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
-                  <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
-                    Sections
-                  </div>
-                  {["Teammate Choices", "Projects", "Rankings"].map((label) => (
-                    <button
-                      key={label}
-                      type="button"
-                      className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        if (label === 'Teammate Choices') navigate('/partners')
-                        if (label === 'Projects') navigate('/projects')
-                        if (label === 'Rankings') navigate('/rankings')
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+            <div className="flex items-center gap-3">
               <div className="relative w-full md:w-[420px]">
                 <input
                   className="input-base pl-10"
@@ -318,7 +332,8 @@ export default function CatalogPage() {
                   onChange={(event) => setSearchText(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
-                      applySearch({ q: searchText })
+                      setPage(0)
+                      applySearch({ q: searchText, pageIndex: 0 })
                     }
                   }}
                 />
@@ -355,7 +370,8 @@ export default function CatalogPage() {
                       }
                       onClick={() => {
                         setMatchMode('and')
-                        applySearch({ mode: 'and' })
+                        setPage(0)
+                        applySearch({ mode: 'and', pageIndex: 0 })
                       }}
                     >
                       Match all
@@ -369,7 +385,8 @@ export default function CatalogPage() {
                       }
                       onClick={() => {
                         setMatchMode('or')
-                        applySearch({ mode: 'or' })
+                        setPage(0)
+                        applySearch({ mode: 'or', pageIndex: 0 })
                       }}
                     >
                       Match any
@@ -396,12 +413,14 @@ export default function CatalogPage() {
                               tabIndex={0}
                               onClick={() => {
                                 const next = toggleSelection(d, selectedDomains, setSelectedDomains)
-                                applySearch({ domains: next })
+                                setPage(0)
+                                applySearch({ domains: next, pageIndex: 0 })
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === 'Enter' || event.key === ' ') {
                                   const next = toggleSelection(d, selectedDomains, setSelectedDomains)
-                                  applySearch({ domains: next })
+                                  setPage(0)
+                                  applySearch({ domains: next, pageIndex: 0 })
                                 }
                               }}
                               className={
@@ -429,12 +448,14 @@ export default function CatalogPage() {
                                 tabIndex={0}
                                 onClick={() => {
                                   const next = toggleSelection(skill, selectedSkills, setSelectedSkills)
-                                  applySearch({ skills: next })
+                                  setPage(0)
+                                  applySearch({ skills: next, pageIndex: 0 })
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter' || event.key === ' ') {
                                     const next = toggleSelection(skill, selectedSkills, setSelectedSkills)
-                                    applySearch({ skills: next })
+                                    setPage(0)
+                                    applySearch({ skills: next, pageIndex: 0 })
                                   }
                                 }}
                                 className={
@@ -539,7 +560,8 @@ export default function CatalogPage() {
                             const value = event.target.value
                             const next = value ? [value] : []
                             setSelectedIndustries(next)
-                            applySearch({ industries: next })
+                            setPage(0)
+                            applySearch({ industries: next, pageIndex: 0 })
                           }}
                         >
                           <option value="">All industries</option>
@@ -605,31 +627,74 @@ export default function CatalogPage() {
               <div className="text-sm text-slate-600">
                 {stats.active_projects} active • {stats.new_this_week} new this week
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-600">Sort by</span>
-                <select className="select-base">
-                  <option>Newest</option>
-                  <option>Highest rated</option>
-                </select>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                {/* <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600">Sort by</span>
+                  <select className="select-base">
+                    <option>Newest</option>
+                    <option>Highest rated</option>
+                  </select>
+                </div> */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || page === 0}
+                    onClick={() => applySearch({ pageIndex: page - 1 })}
+                  >
+                    Prev
+                  </button>
+                  <div className="text-sm text-slate-600">Page {page + 1}</div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || !hasNext}
+                    onClick={() => applySearch({ pageIndex: page + 1 })}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
 
             {loading ? (
               <div className="card p-6 text-slate-600">Loading…</div>
             ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {projects.map((p) => (
-                  <ProjectCard
-                    key={p.id}
-                    project={p}
-                    inCart={cart.project_ids?.includes(p.id)}
-                    onToggleCart={handleToggleCart}
-                    rating={ratings[p.id] || 0}
-                    onRate={(value) => handleRate(p.id, value)}
-                    onOpen={() => navigate(`/projects/${encodeURIComponent(p.id)}`)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 gap-4">
+                  {projects.map((p) => (
+                    <ProjectCard
+                      key={p.id}
+                      project={p}
+                      inCart={cart.project_ids?.includes(p.id)}
+                      onToggleCart={handleToggleCart}
+                      rating={ratings[p.id] || 0}
+                      onRate={(value) => handleRate(p.id, value)}
+                      onOpen={() => navigate(`/projects/${encodeURIComponent(p.id)}`)}
+                    />
+                  ))}
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || page === 0}
+                    onClick={() => applySearch({ pageIndex: page - 1 })}
+                  >
+                    Prev
+                  </button>
+                  <div className="text-sm text-slate-600">Page {page + 1}</div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || !hasNext}
+                    onClick={() => applySearch({ pageIndex: page + 1 })}
+                  >
+                    Next
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

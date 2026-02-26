@@ -112,7 +112,7 @@ create table if not exists ratings (
   id bigserial primary key,
   user_id bigint not null references users(id) on delete cascade,
   org_name text not null references client_intake_forms(org_name) on delete cascade,
-  rating int not null check (rating between 1 and 5),
+  rating int not null check (rating between 1 and 10),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, org_name)

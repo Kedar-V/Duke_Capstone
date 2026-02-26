@@ -35,6 +35,7 @@ export default function PartnersPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [dragId, setDragId] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -127,8 +128,44 @@ export default function PartnersPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
-        <div className="flex justify-center sm:justify-start">
-          <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <button
+                type="button"
+                className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
+                aria-label="Open menu"
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                ☰
+              </button>
+              {menuOpen ? (
+                <div className="absolute left-0 top-full mt-2 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
+                  <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
+                    Sections
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {['Teammate Choices', 'Projects', 'Rankings'].map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
+                        onClick={() => {
+                          setMenuOpen(false)
+                          if (label === 'Teammate Choices') navigate('/partners')
+                          if (label === 'Projects') navigate('/projects')
+                          if (label === 'Rankings') navigate('/rankings')
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+          </div>
         </div>
         <div className="card p-6">
           <div className="flex items-center justify-between">
@@ -136,13 +173,13 @@ export default function PartnersPage() {
               <h1 className="text-3xl font-heading text-duke-900">Teammate Choices</h1>
               <p className="muted mt-1">Choose up to 5 teammates you prefer and 5 you want to avoid.</p>
             </div>
-            <button
+            {/* <button
               type="button"
               className="btn-secondary"
               onClick={() => navigate('/projects')}
             >
               Back to projects
-            </button>
+            </button> */}
           </div>
         </div>
 

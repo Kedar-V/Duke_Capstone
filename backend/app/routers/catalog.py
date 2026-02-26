@@ -88,12 +88,24 @@ def _ensure_ratings_schema(db: Session) -> None:
               id bigserial PRIMARY KEY,
               user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
               org_name text NOT NULL REFERENCES client_intake_forms(org_name) ON DELETE CASCADE,
-              rating int NOT NULL CHECK (rating between 1 and 5),
+              rating int NOT NULL,
               created_at timestamptz NOT NULL DEFAULT now(),
               updated_at timestamptz NOT NULL DEFAULT now(),
-              UNIQUE (user_id, org_name)
+              UNIQUE (user_id, org_name),
+              CONSTRAINT ck_ratings_rating CHECK (rating between 1 and 10)
             )
             """
+        )
+    )
+
+    # If an older CHECK constraint exists (1–5), replace it with the 1–10 constraint.
+    db.execute(
+        text("ALTER TABLE ratings DROP CONSTRAINT IF EXISTS ratings_rating_check")
+    )
+    db.execute(text("ALTER TABLE ratings DROP CONSTRAINT IF EXISTS ck_ratings_rating"))
+    db.execute(
+        text(
+            "ALTER TABLE ratings ADD CONSTRAINT ck_ratings_rating CHECK (rating between 1 and 10)"
         )
     )
     db.commit()
@@ -751,8 +763,8 @@ def save_rating(
     current_user: User = Depends(get_current_user),
 ):
     _ensure_ratings_schema(db)
-    if payload.rating < 1 or payload.rating > 5:
-        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+    if payload.rating < 1 or payload.rating > 10:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 10")
 
     stmt = (
         insert(Rating)

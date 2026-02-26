@@ -14,7 +14,7 @@ import midsLogo from '../assets/mids-logo-white-bg.svg'
 function Stars({ rating, onRate }) {
   return (
     <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((value) => (
+      {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
         <button
           key={value}
           type="button"
@@ -117,18 +117,18 @@ export default function ProjectDisplayPage() {
         <div className="card p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
-              <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
-              <button
+                <button
                 type="button"
                 className="btn-secondary"
                 onClick={() => navigate('/projects')}
               >
                 Back
               </button>
+              <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
             </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <div className="muted">Your rating</div>
+                <div className="muted">{rating}/10</div>
                 <Stars rating={rating} onRate={handleRate} />
               </div>
               <button
