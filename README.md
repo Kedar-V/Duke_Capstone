@@ -1,235 +1,334 @@
-# Duke_Capstone
+# Duke Capstone Project Selection Platform
 
-## Project Plan
+This repository contains a full-stack web application for helping Duke students browse capstone projects, rate them, shortlist them, rank final choices, and optionally submit teammate preferences.
 
-### Goals
-- Build a pixel-matching React + Tailwind UI for the provided capstone listing page.
-- Expose FastAPI endpoints that serve projects, filters, summary stats, and cart data.
-- Persist data in a SQL database.
-- Add **user logins** so users can retain carts/ratings and remain isolated from other users.
-- Deploy on AWS (EC2 microservices) via manual/CLI steps (no Terraform).
+The codebase includes:
+- a React + Vite frontend
+- a FastAPI backend
+- PostgreSQL schema artifacts
+- supporting scripts for student loading and teammate preference backfill
+- architecture and API design documents
 
-### Architecture (AWS)
-- **Frontend service**: React + Tailwind served from **EC2** (dynamic app) behind an **ALB**.
-- **API service**: FastAPI on **EC2** (Dockerized), behind an **ALB**.
-- **Data service**: **RDS PostgreSQL** (primary; local Postgres removed).
-- **Identity/Auth** (recommended): **Amazon Cognito** (User Pool) issuing JWTs, validated by the API service.
-- **Networking**: VPC with public/private subnets, security groups, and NAT for private egress.
-- **Compute**: Auto Scaling Groups for EC2 instances (single instance for dev).
-- **Deployment**: Manual or scripted CLI deploys.
+## What the product does
 
-### Authentication + Isolation (App)
-- **Login**: email/password (local dev) or Cognito-hosted UI / OIDC (AWS).
-- **API auth**: Bearer JWT in `Authorization` header.
-- **Isolation**: cart/ratings/rankings are scoped by the authenticated `user_id`.
-	- The API should never accept an arbitrary `user_id` from the client for protected operations.
-	- Example: `POST /api/cart/items` uses `user_id` from the JWT claims.
-- **Passwords** (if self-hosted auth): store salted hashes (bcrypt/argon2), never plaintext.
+The platform supports the student project-selection flow end to end:
+- browse available capstone projects
+- search and filter the catalog
+- open a project detail page (PDP) for richer context
+- rate projects on a `1–10` scale
+- add projects to a shortlist/cart
+- rank final top project choices
+- submit optional teammate preferences with optional comments
 
-### Execution Plan
-1. **Frontend scaffold**
-	- Set up React + Tailwind with theme tokens for the Duke palette.
-	- Build UI components (`Card`, `Button`, `Input`, `Select`, `Tag`, `Pill`).
-	- Recreate the provided HTML exactly in React.
-2. **Backend scaffold**
-	- Create FastAPI app with routers for `projects`, `filters`, `stats`, `cart`.
-	- Add Pydantic schemas matching the UI data model.
-3. **Auth + user isolation**
-	- Add login flow (dev) and JWT auth middleware/dependency.
-	- Update cart/ratings endpoints to use authenticated user context.
-	- Add basic authorization rules (users can only see/modify their own cart/ratings).
-4. **Database layer**
-	- Define SQL schema and ORM models for projects, tags, skills, domains, organizations.
-	- Seed sample data to match the UI mock.
-	- Seed at least one dev user for local testing.
-5. **API wiring**
-	- Implement read endpoints for the UI.
-	- Add basic “Add to cart” persistence.
-	- Add ratings persistence per user (for ranking).
-6. **AWS infrastructure**
-	- EC2, RDS, VPC, ALB setup via AWS Console or CLI.
-	- Configure Cognito (recommended) and wire JWT validation in the API.
-7. **Docs + validation**
-	- Local dev instructions.
-	- AWS deployment steps.
-	- Quick verification checklist for visual parity.
+## Key features
 
-### Tech Stack
-- **Frontend**: React, Tailwind CSS, Vite
-- **Backend**: FastAPI, Uvicorn
-- **Database**: PostgreSQL (RDS)
-- **Auth**: Cognito (recommended) or self-hosted JWT + bcrypt/argon2
-- **Infra**: AWS (EC2, RDS, ALB, VPC)
+- **Project catalog:** searchable, filterable project listing with pagination
+- **Project detail page:** expanded view of requirements, deliverables, domains, skills, links, and organization information
+- **Ratings:** per-user project ratings stored in the backend and displayed as stars plus `x/10`
+- **Cart/shortlist:** lets students save projects before ranking
+- **Rankings:** supports prioritizing and submitting a top-10 project list
+- **Teammate choices:** supports preferred / avoid teammate selections with encrypted persistence
+- **Navigation UX:** burger menu across main pages and logo-based navigation back to Projects
 
-## Local Dev (RDS-only)
+## Tech stack
 
-Set `DATABASE_URL` to your RDS instance (required for the API container):
+- **Frontend:** React 18, React Router, Vite, Tailwind CSS
+- **Backend:** FastAPI, SQLAlchemy, Uvicorn
+- **Database:** PostgreSQL
+- **Auth:** JWT-based auth handled by FastAPI routes
+- **Security / privacy:** teammate preferences are stored via encrypted payloads
+- **Containerization:** Docker + Docker Compose
 
-```bash
-export DATABASE_URL="postgresql+psycopg2://<user>:<password>@<rds-endpoint>:5432/postgres"
+## Current high-level design (HLD)
+
+### System view
+
+The current implementation is a simple three-tier application:
+- React SPA frontend for student interactions
+- FastAPI backend exposing REST endpoints under `/api`
+- PostgreSQL database for projects, users, ratings, cart, rankings, and teammate preferences
+
+```mermaid
+flowchart LR
+	U[Student User] --> FE[React Frontend\nVite SPA]
+	FE -->|REST /api| API[FastAPI Backend]
+	API --> DB[(PostgreSQL)]
+
+	API --> AUTH[Auth Router]
+	API --> CATALOG[Catalog Router]
+	API --> HEALTH[Health Router]
+
+	CATALOG --> PREFS[Encrypted Teammate Preferences]
+	CATALOG --> RATINGS[Ratings / Cart / Rankings]
 ```
 
-Or copy `.env.example` and use it:
+### Major frontend flows
 
-```bash
-cp .env.example .env
+- **Projects page:** browse, search, filter, paginate, rate, and shortlist projects
+- **Project detail page:** review deep project information and rate a project
+- **Rankings page:** review shortlist and submit a prioritized top-10 list
+- **Teammate choices page:** optionally specify preferred / avoided teammates
+- **Login page:** register/sign in for persistence-enabled workflows
+
+### Major backend responsibilities
+
+- **Authentication:** registration, login, and current-user lookup
+- **Catalog:** project listing, project detail, filters, search, and stats
+- **User interactions:** ratings, cart, rankings, teammate preference storage
+- **Health:** basic readiness endpoint
+
+### Data model summary
+
+Core tables defined in `schema.sql`:
+- `client_intake_forms`: source of project data
+- `users`: authenticated users
+- `user_profiles`: summary fields like average match score
+- `students`: class roster used for teammate preferences
+- `teammate_preferences`: encrypted preference payloads
+- `carts` / `cart_items`: shortlisted projects
+- `rankings` / `ranking_items`: top-10 ranking submission
+- `ratings`: per-user project ratings out of 10
+
+### Target / cloud architecture artifacts
+
+This repo also contains future-state / deployment-oriented design documents:
+- `HLD.md`: expanded cloud-oriented Mermaid HLD
+- `aws_architecture.md`: AWS architecture sketch
+- `flow.md`: supporting flow/design notes
+
+These documents describe a more scalable deployment target than the current local/dev setup.
+
+## Repository structure
+
+```text
+.
+├── ApiContracts.md               # Frontend/backend API contract reference
+├── HLD.md                        # Higher-level architecture diagram (target-state oriented)
+├── aws_architecture.md           # AWS deployment sketch
+├── flow.md                       # Additional design flow notes
+├── schema.sql                    # Canonical PostgreSQL schema for current app
+├── cleanup.sql                   # Utility SQL for ranking/cart cleanup and migration support
+├── seed.sql                      # Older dev seed artifact (see note below)
+├── docker-compose.yml            # Dev stack for frontend + backend containers
+├── backend/
+│   ├── Dockerfile
+│   ├── entrypoint.sh
+│   ├── requirements.txt
+│   ├── app/
+│   │   ├── main.py               # FastAPI app setup
+│   │   ├── db.py                 # SQLAlchemy engine/session configuration
+│   │   ├── auth.py               # Auth helpers
+│   │   ├── crypto.py             # Encrypted teammate preference helpers
+│   │   ├── models.py             # SQLAlchemy models
+│   │   ├── schemas.py            # Pydantic schemas
+│   │   └── routers/
+│   │       ├── auth.py
+│   │       ├── catalog.py
+│   │       └── health.py
+│   ├── data/
+│   │   └── students.csv          # Student roster source
+│   └── scripts/
+│       ├── load_students_from_csv.py
+│       └── backfill_teammate_preferences.py
+└── frontend/
+    ├── Dockerfile
+    ├── package.json
+    ├── vite.config.js
+    ├── tailwind.config.js
+    └── src/
+        ├── App.jsx
+        ├── api.js
+        ├── auth.js
+        ├── styles.css
+        └── pages/
+            ├── Catalog.jsx
+            ├── Login.jsx
+            ├── Partners.jsx
+            ├── ProjectDisplay.jsx
+            └── Rankings.jsx
 ```
 
-Then run:
+## Important notes about repo artifacts
 
-```bash
-docker compose --env-file .env up --build
-```
+- **`schema.sql`** is the primary schema for the current app.
+- **`seed.sql`** appears to come from an older / alternate schema shape (`projects`, `domains`, `organizations`, etc.) and should be treated as a legacy dev artifact unless it is updated to match `schema.sql`.
+- **`backend/app/db.py`** currently contains a fallback hardcoded `DATABASE_URL`; for real local/dev/prod use, you should override this with an environment variable.
 
-To apply schema/seed to RDS, use `aws_connect.ipynb` (schema cell then seed cell).
+## API overview
 
-## Teammate Preferences Encryption
+Base URL (local dev): `http://localhost:8001`
 
-Teammate preference selections are stored encrypted at rest in `teammate_preferences`.
+Key endpoint groups:
+- **Health:** `GET /health`
+- **Auth:** `/api/auth/register`, `/api/auth/login`, `/api/auth/me`
+- **Projects:** `/api/projects`, `/api/projects/{project_id}`
+- **Search/filter/stats:** `/api/search/projects`, `/api/filters`, `/api/stats`
+- **Cart:** `/api/cart`, `/api/cart/items`, `/api/cart/items/{project_id}`
+- **Ratings:** `/api/ratings`
+- **Rankings:** `/api/rankings`
+- **Teammate choices:** `/api/teammate-choices`
 
-Set a key in your environment (required for API + backfill):
+For detailed request/response payloads, see `ApiContracts.md`.
 
-```bash
-export TEAMMATE_PREFS_KEY="<fernet-key>"
-```
+## Local development prerequisites
 
-Generate a key locally:
+Install the following before running locally:
+- **Python 3.11**
+- **Node.js 20+**
+- **npm**
+- **Docker + Docker Compose** (if using containers)
+- **PostgreSQL access** (local or remote)
+
+You will also need these environment variables:
+- `DATABASE_URL`
+- `TEAMMATE_PREFS_KEY`
+- optionally `CORS_ORIGINS`
+
+Generate a teammate preference encryption key with:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Backfill legacy rows (run once per database):
+## Environment setup
+
+Create a `.env` file in the repo root (used by Docker Compose and backend dotenv loading) with values like:
+
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:password@localhost:5432/duke_capstone
+TEAMMATE_PREFS_KEY=your-generated-fernet-key
+CORS_ORIGINS=http://localhost:5173
+```
+
+## Database setup
+
+Initialize the schema before starting the app:
 
 ```bash
-python backend/scripts/backfill_teammate_preferences.py
+psql "$DATABASE_URL" -f schema.sql
 ```
 
-## Load Students from CSV
+Optional utilities:
+- Load students from CSV using `backend/scripts/load_students_from_csv.py`
+- Run `cleanup.sql` only if you are intentionally applying its maintenance logic
 
-Use the bundled CSV (or provide your own) to seed the `students` table.
+To load student data:
 
 ```bash
-python backend/scripts/load_students_from_csv.py
+cd backend
+python scripts/load_students_from_csv.py
 ```
 
-To override the CSV path:
+## Running with Docker Compose
+
+The repository’s `docker-compose.yml` starts:
+- `api` on `http://localhost:8001`
+- `frontend` on `http://localhost:5173`
+
+### Steps
+
+1. Create and populate `.env`
+2. Initialize the database with `schema.sql`
+3. Start the stack:
 
 ```bash
-export STUDENTS_CSV="/path/to/students.csv"
-python backend/scripts/load_students_from_csv.py
+docker compose up --build
 ```
 
-## Database Schema (PostgreSQL)
+### Services
 
-This schema supports:
-- Project catalog + organization metadata
-- Tags/skills for filtering
-- Ratings (1–5 stars)
-- Cart selection (up to 10 projects)
+- **Frontend:** `http://localhost:5173`
+- **Backend:** `http://localhost:8001`
+- **Health check:** `http://localhost:8001/health`
 
-```sql
--- Core lookup tables
-create table organizations (
-	id bigserial primary key,
-	name text not null unique,
-	industry text,
-	company_size text
-);
+## Running without Docker
 
-create table domains (
-	id bigserial primary key,
-	name text not null unique
-);
+### Backend
 
-create table skills (
-	id bigserial primary key,
-	name text not null unique
-);
-
-create table tags (
-	id bigserial primary key,
-	name text not null unique
-);
-
--- Main project entity
-create table projects (
-	id bigserial primary key,
-	title text not null,
-	description text not null,
-	duration_weeks int not null check (duration_weeks > 0),
-
-	domain_id bigint references domains(id),
-	organization_id bigint references organizations(id),
-
-	difficulty text not null check (difficulty in ('Introductory','Intermediate','Advanced')),
-	modality text not null check (modality in ('Remote','Hybrid','In-person')),
-	cadence text check (cadence in ('Weekly','Bi-weekly','Monthly')),
-	confidentiality text check (confidentiality in ('None','NDA Required','IP Agreement')),
-
-	min_hours_per_week int check (min_hours_per_week >= 0),
-	max_hours_per_week int check (max_hours_per_week >= 0),
-
-	is_active boolean not null default true,
-	created_at timestamptz not null default now()
-);
-
-create index idx_projects_domain on projects(domain_id);
-create index idx_projects_organization on projects(organization_id);
-create index idx_projects_active_created on projects(is_active, created_at desc);
-
--- Many-to-many for filtering
-create table project_skills (
-	project_id bigint not null references projects(id) on delete cascade,
-	skill_id bigint not null references skills(id) on delete cascade,
-	primary key (project_id, skill_id)
-);
-
-create table project_tags (
-	project_id bigint not null references projects(id) on delete cascade,
-	tag_id bigint not null references tags(id) on delete cascade,
-	primary key (project_id, tag_id)
-);
-
--- Optional: user profiles (minimal; enough to support carts and ratings)
-create table users (
-	id bigserial primary key,
-	email text unique,
-	display_name text,
-	created_at timestamptz not null default now()
-);
-
--- Ratings (the UI shows per-project star rating control)
-create table project_ratings (
-	id bigserial primary key,
-	project_id bigint not null references projects(id) on delete cascade,
-	user_id bigint references users(id) on delete set null,
-	rating int not null check (rating between 1 and 5),
-	created_at timestamptz not null default now(),
-	unique (project_id, user_id)
-);
-
-create index idx_project_ratings_project on project_ratings(project_id);
-
--- Cart (UI shows "0 / 10 selected")
-create table carts (
-	id bigserial primary key,
-	user_id bigint references users(id) on delete cascade,
-	status text not null default 'open' check (status in ('open','submitted')),
-	created_at timestamptz not null default now(),
-	updated_at timestamptz not null default now()
-);
-
-create table cart_items (
-	cart_id bigint not null references carts(id) on delete cascade,
-	project_id bigint not null references projects(id) on delete cascade,
-	added_at timestamptz not null default now(),
-	primary key (cart_id, project_id)
-);
-
-create index idx_cart_items_cart on cart_items(cart_id);
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export DATABASE_URL="postgresql+psycopg2://postgres:password@localhost:5432/duke_capstone"
+export TEAMMATE_PREFS_KEY="your-generated-fernet-key"
+export CORS_ORIGINS="http://localhost:5173"
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-Notes:
-- `difficulty`, `modality`, `cadence`, `confidentiality`, `industry`, and `company_size` are stored as `text` with checks to keep the schema simple and migration-friendly.
-- If we need stronger typing later, we can migrate these to PostgreSQL `enum` types.
+For manual frontend + backend runs, note that `frontend/vite.config.js` currently proxies `/api` to `http://api:8000`, which works in Docker because `api` is the Compose service name. For non-Docker local runs, update that proxy target to `http://localhost:8001` or use Docker Compose.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend dev server default:
+- `http://localhost:5173`
+
+## Common developer workflows
+
+### Register / sign in
+- Open the frontend
+- Create an account or sign in
+- Persist ratings, cart, rankings, and teammate choices
+
+### Rate and rank projects
+- Browse the catalog
+- Open a project detail page
+- Rate projects out of 10
+- Add projects to cart
+- Submit top-10 rankings
+
+### Teammate preferences
+- Open **Teammate Choices**
+- Add preferred / avoided students if you have anyone in mind
+- Comments are optional and stored when provided
+
+## Supporting scripts
+
+### `backend/scripts/load_students_from_csv.py`
+Loads student roster records from `backend/data/students.csv` into the `students` table.
+
+### `backend/scripts/backfill_teammate_preferences.py`
+Backfills / migrates teammate preference rows into encrypted payload storage. Requires `TEAMMATE_PREFS_KEY`.
+
+Run it with:
+
+```bash
+cd backend
+export TEAMMATE_PREFS_KEY="your-generated-fernet-key"
+python scripts/backfill_teammate_preferences.py
+```
+
+## Security / privacy notes
+
+- Teammate preference payloads are encrypted before storage.
+- `TEAMMATE_PREFS_KEY` is required at runtime for teammate preference operations.
+- Do not commit real credentials or production secrets to source control.
+
+## Known caveats
+
+- `backend/app/db.py` includes a hardcoded fallback database URL; this should be overridden via `DATABASE_URL` and ideally removed/refactored.
+- `seed.sql` does not appear to match the current `client_intake_forms` schema and may not be safe to use as-is.
+- There is no dedicated Postgres service in `docker-compose.yml`; you must provide a reachable Postgres instance yourself.
+
+## Additional documents in this repo
+
+- `ApiContracts.md` — endpoint contracts and example payloads
+- `HLD.md` — target-state high-level architecture diagram
+- `aws_architecture.md` — AWS architecture concept
+- `flow.md` — supporting flow notes
+- `aws_connect.ipynb` and `test.ipynb` — notebook artifacts for experimentation
+
+## Recommended next improvements
+
+- Add a real `postgres` service to `docker-compose.yml`
+- Replace SQL bootstrap steps with migrations (Alembic)
+- Remove hardcoded DB fallback from `backend/app/db.py`
+- Refresh or replace `seed.sql` to match the active schema
+- Add automated tests for ratings, rankings, and teammate preference flows
+
