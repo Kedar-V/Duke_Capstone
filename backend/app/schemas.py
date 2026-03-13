@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -51,6 +51,36 @@ class ProjectOut(BaseModel):
     created_at: datetime
 
 
+class ProjectDetailOut(BaseModel):
+    id: str
+    organization: str
+    title: str
+    summary: Optional[str] = None
+    description: Optional[str] = None
+
+    org_industry: Optional[str] = None
+    org_industry_other: Optional[str] = None
+    org_website: Optional[str] = None
+
+    minimum_deliverables: Optional[str] = None
+    stretch_goals: Optional[str] = None
+    long_term_impact: Optional[str] = None
+    scope_clarity: Optional[str] = None
+    scope_clarity_other: Optional[str] = None
+    publication_potential: Optional[str] = None
+    data_access: Optional[str] = None
+    project_sector: Optional[str] = None
+
+    required_skills: List[str] = Field(default_factory=list)
+    required_skills_other: Optional[str] = None
+    technical_domains: List[str] = Field(default_factory=list)
+    supplementary_documents: List[str] = Field(default_factory=list)
+    video_links: List[str] = Field(default_factory=list)
+
+    created_at: datetime
+    updated_at: datetime
+
+
 class StatsOut(BaseModel):
     active_projects: int
     new_this_week: int
@@ -89,11 +119,15 @@ class StudentOut(BaseModel):
 class TeammateChoicesIn(BaseModel):
     want_ids: List[int] = Field(default_factory=list)
     avoid_ids: List[int] = Field(default_factory=list)
+    avoid_reasons: Dict[int, str] = Field(default_factory=dict)
+    comments: Dict[int, str] = Field(default_factory=dict)
 
 
 class TeammateChoicesOut(BaseModel):
     want_ids: List[int] = Field(default_factory=list)
     avoid_ids: List[int] = Field(default_factory=list)
+    avoid_reasons: Dict[int, str] = Field(default_factory=dict)
+    comments: Dict[int, str] = Field(default_factory=dict)
 
 
 class FilterOptionsOut(BaseModel):
@@ -141,6 +175,16 @@ class RankingsOut(BaseModel):
 
 class RankingsIn(BaseModel):
     top_ten_ids: List[str] = Field(default_factory=list)
+
+
+class RatingIn(BaseModel):
+    project_id: str
+    rating: int
+
+
+class RatingOut(BaseModel):
+    project_id: str
+    rating: int
 
 
 class SearchProjectsIn(BaseModel):

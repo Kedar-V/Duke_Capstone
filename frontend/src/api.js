@@ -30,6 +30,10 @@ export function getProjects(params = {}) {
   return request(`/api/projects${suffix}`)
 }
 
+export function getProject(projectId) {
+  return request(`/api/projects/${encodeURIComponent(projectId)}`)
+}
+
 export function searchProjects(payload = {}) {
   return request('/api/search/projects', {
     method: 'POST',
@@ -92,10 +96,15 @@ export function getTeammateChoices() {
   return request('/api/teammate-choices')
 }
 
-export function saveTeammateChoices({ wantIds, avoidIds }) {
+export function saveTeammateChoices({ wantIds, avoidIds, comments, avoidReasons }) {
   return request('/api/teammate-choices', {
     method: 'POST',
-    body: JSON.stringify({ want_ids: wantIds, avoid_ids: avoidIds }),
+    body: JSON.stringify({
+      want_ids: wantIds,
+      avoid_ids: avoidIds,
+      comments: comments || {},
+      avoid_reasons: avoidReasons || {},
+    }),
   })
 }
 
@@ -107,5 +116,16 @@ export function saveRankings({ topTenIds }) {
   return request('/api/rankings', {
     method: 'POST',
     body: JSON.stringify({ top_ten_ids: topTenIds }),
+  })
+}
+
+export function getRatings() {
+  return request('/api/ratings')
+}
+
+export function saveRating({ projectId, rating }) {
+  return request('/api/ratings', {
+    method: 'POST',
+    body: JSON.stringify({ project_id: projectId, rating }),
   })
 }

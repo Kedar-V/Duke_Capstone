@@ -1,4 +1,14 @@
-from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
 
@@ -12,15 +22,21 @@ class User(Base):
     email = Column(Text, unique=True)
     display_name = Column(Text)
     password_hash = Column(Text)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"
 
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
     avg_match_score = Column(Integer, nullable=False, server_default="86")
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class Student(Base):
@@ -30,21 +46,40 @@ class Student(Base):
     full_name = Column(Text, nullable=False)
     email = Column(Text, unique=True)
     program = Column(Text)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class TeammatePreference(Base):
     __tablename__ = "teammate_preferences"
     __table_args__ = (
-        UniqueConstraint("user_id", "student_id", name="uq_teammate_pref_user_student"),
-        CheckConstraint("preference in ('want','avoid')", name="ck_teammate_pref_preference"),
+        UniqueConstraint(
+            "user_id",
+            "student_id_hash",
+            name="uq_teammate_pref_user_student_hash",
+        ),
+        CheckConstraint(
+            "preference in ('want','avoid')",
+            name="ck_teammate_pref_preference",
+        ),
     )
 
     id = Column(BigInteger, primary_key=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    student_id = Column(BigInteger, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
-    preference = Column(Text, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    student_id_hash = Column(Text, nullable=True)
+    payload_ciphertext = Column(Text, nullable=True)
+    student_id = Column(
+        BigInteger, ForeignKey("students.id", ondelete="CASCADE"), nullable=True
+    )
+    preference = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class ClientIntakeForm(Base):
     __tablename__ = "client_intake_forms"
 
@@ -74,8 +109,12 @@ class ClientIntakeForm(Base):
     edit_token = Column(Text, unique=True)
     edit_url = Column(Text)
     revisions = Column(JSONB, nullable=False, server_default="[]")
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class Cart(Base):
@@ -84,25 +123,46 @@ class Cart(Base):
     id = Column(BigInteger, primary_key=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
     status = Column(Text, nullable=False, server_default="open")
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class CartItem(Base):
     __tablename__ = "cart_items"
 
-    cart_id = Column(BigInteger, ForeignKey("carts.id", ondelete="CASCADE"), primary_key=True)
-    org_name = Column(Text, ForeignKey("client_intake_forms.org_name", ondelete="CASCADE"), primary_key=True)
-    added_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    cart_id = Column(
+        BigInteger, ForeignKey("carts.id", ondelete="CASCADE"), primary_key=True
+    )
+    org_name = Column(
+        Text,
+        ForeignKey("client_intake_forms.org_name", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    added_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class Ranking(Base):
     __tablename__ = "rankings"
 
     id = Column(BigInteger, primary_key=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class RankingItem(Base):
@@ -116,7 +176,36 @@ class RankingItem(Base):
         BigInteger, ForeignKey("rankings.id", ondelete="CASCADE"), primary_key=True
     )
     org_name = Column(
-        Text, ForeignKey("client_intake_forms.org_name", ondelete="CASCADE"), primary_key=True
+        Text,
+        ForeignKey("client_intake_forms.org_name", ondelete="CASCADE"),
+        primary_key=True,
     )
     rank = Column(Integer, nullable=False)
-    added_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    added_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Rating(Base):
+    __tablename__ = "ratings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "org_name", name="uq_ratings_user_project"),
+        CheckConstraint("rating between 1 and 10", name="ck_ratings_rating"),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    org_name = Column(
+        Text,
+        ForeignKey("client_intake_forms.org_name", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rating = Column(Integer, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

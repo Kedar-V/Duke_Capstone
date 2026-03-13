@@ -261,6 +261,8 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 ---
 
 ## Teammate Choices
+**Note:** Teammate preference selections are encrypted at rest in the database.
+
 ### `GET /api/students`
 **Auth:** No
 
@@ -274,7 +276,7 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 
 **Response 200**
 ```json
-{ "want_ids": [1,2], "avoid_ids": [3] }
+{ "want_ids": [1,2], "avoid_ids": [3], "avoid_reasons": { "3": "Worked together before" } }
 ```
 
 ### `POST /api/teammate-choices`
@@ -282,12 +284,12 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 
 **Request**
 ```json
-{ "want_ids": [1,2], "avoid_ids": [3] }
+{ "want_ids": [1,2], "avoid_ids": [3], "avoid_reasons": { "3": "Worked together before" } }
 ```
 
 **Response 200**
 ```json
-{ "want_ids": [1,2], "avoid_ids": [3] }
+{ "want_ids": [1,2], "avoid_ids": [3], "avoid_reasons": { "3": "Worked together before" } }
 ```
 
 **Errors**

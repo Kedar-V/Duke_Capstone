@@ -5,62 +5,56 @@ import {
   addCartItem,
   getCart,
   getFilters,
+  getRatings,
   searchProjects,
   getStats,
   getUserSummary,
   removeCartItem,
+  saveRating,
 } from '../api'
 import { clearAuth, getUser } from '../auth'
+import midsLogo from '../assets/mids-logo-white-bg.svg'
 
-function Stars() {
+function Stars({ rating, onRate }) {
   return (
     <div className="mt-3 flex items-center gap-1">
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 1 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 2 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 3 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 4 stars"
-      >
-        ★
-      </button>
-      <button
-        type="button"
-        className="text-lg transition text-slate-300 hover:scale-110"
-        aria-label="Rate 5 stars"
-      >
-        ★
-      </button>
+      {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+        <button
+          key={value}
+          type="button"
+          className={
+            value <= rating
+              ? 'text-lg transition text-amber-400 hover:scale-110'
+              : 'text-lg transition text-slate-300 hover:scale-110'
+          }
+          aria-label={`Rate ${value} stars`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onRate(value)
+          }}
+        >
+          ★
+        </button>
+      ))}
     </div>
   )
 }
 
-function ProjectCard({ project, inCart, onToggleCart }) {
+function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen }) {
   return (
-    <div className="card p-5 flex flex-col gap-4">
+    <div
+      className="card p-5 flex flex-col gap-4 cursor-pointer"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onOpen()
+      }}
+    >
       <div className="flex items-start justify-between gap-4">
         <div>
           <span className="pill">{project.domain}</span>
-          <Stars />
+          <Stars rating={rating} onRate={onRate} />
           <h3 className="text-lg font-semibold text-duke-900 mt-3">{project.title}</h3>
           <p className="muted mt-2">{project.description}</p>
         </div>
@@ -80,13 +74,28 @@ function ProjectCard({ project, inCart, onToggleCart }) {
       </div>
       <div className="flex items-center justify-between">
         <div className="text-sm text-slate-500">Sponsored by {project.organization}</div>
-        <button
-          type="button"
-          className={inCart ? 'btn-secondary flex items-center gap-2' : 'btn-primary'}
-          onClick={() => onToggleCart(project.id, inCart)}
-        >
-          {inCart ? 'Remove from cart' : 'Add to cart'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpen()
+            }}
+          >
+            View more
+          </button>
+          <button
+            type="button"
+            className={inCart ? 'btn-secondary flex items-center gap-2' : 'btn-primary'}
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleCart(project.id, inCart)
+            }}
+          >
+            {inCart ? 'Remove from cart' : 'Add to cart'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -103,6 +112,9 @@ function initialsFor(user) {
 export default function CatalogPage() {
   const navigate = useNavigate()
   const user = getUser()
+
+  const PAGE_SIZE = 5
+  const FETCH_LIMIT = PAGE_SIZE + 1
 
   const [projects, setProjects] = useState([])
   const [stats, setStats] = useState({ active_projects: 0, new_this_week: 0 })
@@ -125,39 +137,43 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [avgMatchScore, setAvgMatchScore] = useState(0)
+  const [ratings, setRatings] = useState({})
+  const [page, setPage] = useState(0)
+  const [hasNext, setHasNext] = useState(false)
+
+  function mapProjects(list) {
+    return list.map((x) => ({
+      id: x.id,
+      domain: x.domain ?? '',
+      title: x.title,
+      description: x.description,
+      duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
+      tags: Array.isArray(x.tags) ? x.tags : [],
+      difficulty: x.difficulty ?? '—',
+      time:
+        x.min_hours_per_week && x.max_hours_per_week
+          ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
+          : '—',
+      modality: x.modality ?? '—',
+      organization: x.organization ?? '—',
+    }))
+  }
+
+  function setPagedProjects(raw) {
+    const mapped = mapProjects(raw)
+    setHasNext(mapped.length > PAGE_SIZE)
+    setProjects(mapped.slice(0, PAGE_SIZE))
+  }
 
   useEffect(() => {
     let cancelled = false
-
-    function mapProjects(list) {
-      return list.map((x) => ({
-        id: x.id,
-        domain: x.domain ?? '',
-        title: x.title,
-        description: x.description,
-        duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
-        tags: Array.isArray(x.tags) ? x.tags : [],
-        difficulty: x.difficulty ?? '—',
-        time:
-          x.min_hours_per_week && x.max_hours_per_week
-            ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
-            : '—',
-        modality: x.modality ?? '—',
-        organization: x.organization ?? '—',
-      }))
-    }
-
-    async function fetchProjects(payload = {}) {
-      const data = await searchProjects({ limit: 50, offset: 0, ...payload })
-      return mapProjects(data)
-    }
 
     async function load() {
       setLoading(true)
       try {
         const [s, p, f] = await Promise.all([
           getStats(),
-          fetchProjects(),
+          searchProjects({ limit: FETCH_LIMIT, offset: 0 }),
           getFilters(),
         ])
         if (cancelled) return
@@ -165,17 +181,28 @@ export default function CatalogPage() {
         setStats(s)
         setFilters(f)
 
-        setProjects(p)
+        setPage(0)
+        setPagedProjects(p)
 
         if (user) {
-          const [c, summary] = await Promise.all([getCart(), getUserSummary()])
+          const [c, summary, r] = await Promise.all([
+            getCart(),
+            getUserSummary(),
+            getRatings(),
+          ])
           if (!cancelled) {
             setCart(c)
             setAvgMatchScore(summary.avg_match_score)
+            const map = {}
+            r.forEach((item) => {
+              map[item.project_id] = item.rating
+            })
+            setRatings(map)
           }
         } else {
           setCart({ selected: 0, limit: 10 })
           setAvgMatchScore(0)
+          setRatings({})
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -186,38 +213,24 @@ export default function CatalogPage() {
     return () => {
       cancelled = true
     }
-  }, [user?.id])
+  }, [])
 
-  async function applySearch({ domains, skills, industries, mode, q } = {}) {
+  async function applySearch({ domains, skills, industries, mode, q, pageIndex } = {}) {
     setLoading(true)
     try {
+      const nextPage = Math.max(0, Number.isFinite(pageIndex) ? pageIndex : page)
       const payload = {
-        q: (q ?? searchText).trim() || undefined,
+        q: q ?? searchText,
         domains: domains ?? selectedDomains,
         skills: skills ?? selectedSkills,
         industries: industries ?? selectedIndustries,
         match_mode: mode ?? matchMode,
-        limit: 50,
-        offset: 0,
+        limit: FETCH_LIMIT,
+        offset: nextPage * PAGE_SIZE,
       }
       const data = await searchProjects(payload)
-      setProjects(
-        data.map((x) => ({
-          id: x.id,
-          domain: x.domain ?? '',
-          title: x.title,
-          description: x.description,
-          duration: x.duration_weeks ? `${x.duration_weeks} weeks` : '—',
-          tags: Array.isArray(x.tags) ? x.tags : [],
-          difficulty: x.difficulty ?? '—',
-          time:
-            x.min_hours_per_week && x.max_hours_per_week
-              ? `${x.min_hours_per_week}-${x.max_hours_per_week} hrs/week`
-              : '—',
-          modality: x.modality ?? '—',
-          organization: x.organization ?? '—',
-        }))
-      )
+      setPage(nextPage)
+      setPagedProjects(data)
     } finally {
       setLoading(false)
     }
@@ -232,7 +245,8 @@ export default function CatalogPage() {
 
   useEffect(() => {
     const handle = setTimeout(() => {
-      applySearch({ q: searchText })
+      setPage(0)
+      applySearch({ q: searchText, pageIndex: 0 })
     }, 350)
     return () => clearTimeout(handle)
   }, [searchText])
@@ -258,46 +272,65 @@ export default function CatalogPage() {
     navigate('/', { replace: true })
   }
 
+  async function handleRate(projectId, value) {
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    setRatings((prev) => ({ ...prev, [projectId]: value }))
+    await saveRating({ projectId, rating: value })
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-8">
         <div className="card p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-3xl font-heading text-duke-900">Capstone Projects</h1>
-              <p className="muted mt-1">Explore capstone opportunities tailored to your skills.</p>
-            </div>
-            <div className="flex items-center gap-3 relative">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button
+                  type="button"
+                  className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
+                  aria-label="Open menu"
+                  onClick={() => setMenuOpen((v) => !v)}
+                >
+                  ☰
+                </button>
+                {menuOpen ? (
+                  <div className="absolute left-0 top-full mt-2 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
+                    <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
+                      Sections
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {["Teammate Choices", "Projects", "Rankings"].map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
+                          onClick={() => {
+                            setMenuOpen(false)
+                            if (label === 'Teammate Choices') navigate('/partners')
+                            if (label === 'Projects') navigate('/projects')
+                            if (label === 'Rankings') navigate('/rankings')
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
-                className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
-                aria-label="Open menu"
-                onClick={() => setMenuOpen((v) => !v)}
+                className="inline-flex"
+                aria-label="Go to projects"
+                onClick={() => navigate('/projects')}
               >
-                ☰
+                <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
               </button>
-              {menuOpen ? (
-                <div className="absolute right-0 top-12 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
-                  <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
-                    Sections
-                  </div>
-                  {["Teammate Choices", "Projects", "Rankings"].map((label) => (
-                    <button
-                      key={label}
-                      type="button"
-                      className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                      onClick={() => {
-                        setMenuOpen(false)
-                        if (label === 'Teammate Choices') navigate('/partners')
-                        if (label === 'Projects') navigate('/projects')
-                        if (label === 'Rankings') navigate('/rankings')
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+            </div>
+            <div className="flex items-center gap-3">
               <div className="relative w-full md:w-[420px]">
                 <input
                   className="input-base pl-10"
@@ -306,7 +339,8 @@ export default function CatalogPage() {
                   onChange={(event) => setSearchText(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
-                      applySearch({ q: searchText })
+                      setPage(0)
+                      applySearch({ q: searchText, pageIndex: 0 })
                     }
                   }}
                 />
@@ -343,7 +377,8 @@ export default function CatalogPage() {
                       }
                       onClick={() => {
                         setMatchMode('and')
-                        applySearch({ mode: 'and' })
+                        setPage(0)
+                        applySearch({ mode: 'and', pageIndex: 0 })
                       }}
                     >
                       Match all
@@ -357,7 +392,8 @@ export default function CatalogPage() {
                       }
                       onClick={() => {
                         setMatchMode('or')
-                        applySearch({ mode: 'or' })
+                        setPage(0)
+                        applySearch({ mode: 'or', pageIndex: 0 })
                       }}
                     >
                       Match any
@@ -384,12 +420,14 @@ export default function CatalogPage() {
                               tabIndex={0}
                               onClick={() => {
                                 const next = toggleSelection(d, selectedDomains, setSelectedDomains)
-                                applySearch({ domains: next })
+                                setPage(0)
+                                applySearch({ domains: next, pageIndex: 0 })
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === 'Enter' || event.key === ' ') {
                                   const next = toggleSelection(d, selectedDomains, setSelectedDomains)
-                                  applySearch({ domains: next })
+                                  setPage(0)
+                                  applySearch({ domains: next, pageIndex: 0 })
                                 }
                               }}
                               className={
@@ -417,12 +455,14 @@ export default function CatalogPage() {
                                 tabIndex={0}
                                 onClick={() => {
                                   const next = toggleSelection(skill, selectedSkills, setSelectedSkills)
-                                  applySearch({ skills: next })
+                                  setPage(0)
+                                  applySearch({ skills: next, pageIndex: 0 })
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter' || event.key === ' ') {
                                     const next = toggleSelection(skill, selectedSkills, setSelectedSkills)
-                                    applySearch({ skills: next })
+                                    setPage(0)
+                                    applySearch({ skills: next, pageIndex: 0 })
                                   }
                                 }}
                                 className={
@@ -527,7 +567,8 @@ export default function CatalogPage() {
                             const value = event.target.value
                             const next = value ? [value] : []
                             setSelectedIndustries(next)
-                            applySearch({ industries: next })
+                            setPage(0)
+                            applySearch({ industries: next, pageIndex: 0 })
                           }}
                         >
                           <option value="">All industries</option>
@@ -566,16 +607,12 @@ export default function CatalogPage() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="text-sm text-slate-500">Welcome {user?.display_name || user?.email || '<PRIVATE_PERSON>'}</div>
-                  <div className="text-xl font-heading text-duke-900">Your curated capstone list</div>
+                  <div className="text-xl font-heading text-duke-900">Available capstone projects</div>
                   <div className="text-sm text-slate-500 mt-1">
-                    Showing <span className="font-semibold">{curatedCount}</span> curated projects based on your profile.
+                    Showing <span className="font-semibold">{curatedCount}</span> projects currently available.
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <div className="card px-4 py-3">
-                    <div className="text-xs text-slate-500">Average match</div>
-                    <div className="text-2xl font-semibold text-duke-900">{avgMatchScore}%</div>
-                  </div>
                   <div className="card px-4 py-3">
                     <div className="text-xs text-slate-500">Selected</div>
                     <div className="text-2xl font-semibold text-duke-900">
@@ -597,29 +634,74 @@ export default function CatalogPage() {
               <div className="text-sm text-slate-600">
                 {stats.active_projects} active • {stats.new_this_week} new this week
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-slate-600">Sort by</span>
-                <select className="select-base">
-                  <option>Best match</option>
-                  <option>Newest</option>
-                  <option>Highest rated</option>
-                </select>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                {/* <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600">Sort by</span>
+                  <select className="select-base">
+                    <option>Newest</option>
+                    <option>Highest rated</option>
+                  </select>
+                </div> */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || page === 0}
+                    onClick={() => applySearch({ pageIndex: page - 1 })}
+                  >
+                    Prev
+                  </button>
+                  <div className="text-sm text-slate-600">Page {page + 1}</div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || !hasNext}
+                    onClick={() => applySearch({ pageIndex: page + 1 })}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
 
             {loading ? (
               <div className="card p-6 text-slate-600">Loading…</div>
             ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {projects.map((p) => (
-                  <ProjectCard
-                    key={p.id}
-                    project={p}
-                    inCart={cart.project_ids?.includes(p.id)}
-                    onToggleCart={handleToggleCart}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 gap-4">
+                  {projects.map((p) => (
+                    <ProjectCard
+                      key={p.id}
+                      project={p}
+                      inCart={cart.project_ids?.includes(p.id)}
+                      onToggleCart={handleToggleCart}
+                      rating={ratings[p.id] || 0}
+                      onRate={(value) => handleRate(p.id, value)}
+                      onOpen={() => navigate(`/projects/${encodeURIComponent(p.id)}`)}
+                    />
+                  ))}
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || page === 0}
+                    onClick={() => applySearch({ pageIndex: page - 1 })}
+                  >
+                    Prev
+                  </button>
+                  <div className="text-sm text-slate-600">Page {page + 1}</div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    disabled={loading || !hasNext}
+                    onClick={() => applySearch({ pageIndex: page + 1 })}
+                  >
+                    Next
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
