@@ -321,7 +321,14 @@ export default function CatalogPage() {
                   </div>
                 ) : null}
               </div>
-              <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+              <button
+                type="button"
+                className="inline-flex"
+                aria-label="Go to projects"
+                onClick={() => navigate('/projects')}
+              >
+                <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+              </button>
             </div>
             <div className="flex items-center gap-3">
               <div className="relative w-full md:w-[420px]">

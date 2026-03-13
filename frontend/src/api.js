@@ -96,12 +96,13 @@ export function getTeammateChoices() {
   return request('/api/teammate-choices')
 }
 
-export function saveTeammateChoices({ wantIds, avoidIds, avoidReasons }) {
+export function saveTeammateChoices({ wantIds, avoidIds, comments, avoidReasons }) {
   return request('/api/teammate-choices', {
     method: 'POST',
     body: JSON.stringify({
       want_ids: wantIds,
       avoid_ids: avoidIds,
+      comments: comments || {},
       avoid_reasons: avoidReasons || {},
     }),
   })

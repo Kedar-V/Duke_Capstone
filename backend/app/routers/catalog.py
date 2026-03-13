@@ -659,6 +659,7 @@ def get_teammate_choices(
     ).all()
     want_ids: list[int] = []
     avoid_ids: list[int] = []
+    comments: dict[int, str] = {}
     avoid_reasons: dict[int, str] = {}
     for payload_ciphertext, student_id, preference in rows:
         if payload_ciphertext:
@@ -669,20 +670,26 @@ def get_teammate_choices(
                 raise HTTPException(status_code=500, detail=str(exc)) from exc
             student_id = payload.get("student_id")
             preference = payload.get("preference")
-            avoid_reason = payload.get("avoid_reason")
+            comment = payload.get("comment") or payload.get("avoid_reason")
         else:
-            avoid_reason = None
+            comment = None
 
         if not student_id or not preference:
             continue
         if preference == "want":
             want_ids.append(int(student_id))
+            if comment:
+                comments[int(student_id)] = str(comment)
         if preference == "avoid":
             avoid_ids.append(int(student_id))
-            if avoid_reason:
-                avoid_reasons[int(student_id)] = str(avoid_reason)
+            if comment:
+                comments[int(student_id)] = str(comment)
+                avoid_reasons[int(student_id)] = str(comment)
     return TeammateChoicesOut(
-        want_ids=want_ids, avoid_ids=avoid_ids, avoid_reasons=avoid_reasons
+        want_ids=want_ids,
+        avoid_ids=avoid_ids,
+        avoid_reasons=avoid_reasons,
+        comments=comments,
     )
 
 
@@ -701,6 +708,9 @@ def set_teammate_choices(
     if set(payload.want_ids) & set(payload.avoid_ids):
         raise HTTPException(status_code=400, detail="A student cannot be in both lists")
 
+    selected_ids = payload.want_ids + payload.avoid_ids
+    comments_map = payload.comments or payload.avoid_reasons or {}
+
     db.execute(
         select(TeammatePreference).where(TeammatePreference.user_id == current_user.id)
     )
@@ -710,7 +720,8 @@ def set_teammate_choices(
 
     for sid in payload.want_ids:
         try:
-            ciphertext, student_hash = encrypt_teammate_choice(sid, "want")
+            comment = str(comments_map.get(sid, "")).strip()
+            ciphertext, student_hash = encrypt_teammate_choice(sid, "want", comment)
         except Exception as exc:
             logger.exception("Failed to encrypt teammate preference")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -723,8 +734,8 @@ def set_teammate_choices(
         )
     for sid in payload.avoid_ids:
         try:
-            reason = payload.avoid_reasons.get(sid) or ""
-            ciphertext, student_hash = encrypt_teammate_choice(sid, "avoid", reason)
+            comment = str(comments_map.get(sid, "")).strip()
+            ciphertext, student_hash = encrypt_teammate_choice(sid, "avoid", comment)
         except Exception as exc:
             logger.exception("Failed to encrypt teammate preference")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -737,10 +748,17 @@ def set_teammate_choices(
         )
 
     db.commit()
+
+    avoid_reasons = {
+        sid: comments_map[sid]
+        for sid in payload.avoid_ids
+        if str(comments_map.get(sid, "")).strip()
+    }
     return TeammateChoicesOut(
         want_ids=payload.want_ids,
         avoid_ids=payload.avoid_ids,
-        avoid_reasons=payload.avoid_reasons,
+        avoid_reasons=avoid_reasons,
+        comments={sid: str(comments_map.get(sid, "")).strip() for sid in selected_ids},
     )
 
 

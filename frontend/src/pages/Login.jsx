@@ -48,7 +48,14 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-md mx-auto px-4 py-16">
         <div className="flex justify-center mb-6">
-          <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+          <button
+            type="button"
+            className="inline-flex"
+            aria-label="Go to projects"
+            onClick={() => navigate('/projects')}
+          >
+            <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+          </button>
         </div>
         <div className="card p-6">
           <h1 className="text-2xl font-heading text-duke-900">

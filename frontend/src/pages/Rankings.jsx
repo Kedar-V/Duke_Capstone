@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getRankings, removeCartItem, saveRankings } from '../api'
+import { getRankings, getRatings, removeCartItem, saveRankings } from '../api'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 export default function RankingsPage() {
@@ -11,6 +11,7 @@ export default function RankingsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [popup, setPopup] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [ratings, setRatings] = useState({})
   const popupTimerRef = useRef(null)
 
   useEffect(() => {
@@ -36,23 +37,63 @@ export default function RankingsPage() {
     }, 3000)
   }
 
-  function refreshRankings() {
-    return getRankings()
-      .then((data) => {
-        const additional = data.additional ?? []
-        const ranked = data.top_ten ?? []
-        if (ranked.length === 0 && additional.length > 0) {
-          setTopTen(additional.slice(0, 10))
-          setAdditionalSelections(additional.slice(10))
-        } else {
-          setAdditionalSelections(additional)
-          setTopTen(ranked)
-        }
+  async function refreshRankings() {
+    try {
+      const [data, ratingRows] = await Promise.all([
+        getRankings(),
+        getRatings().catch(() => []),
+      ])
+
+      const nextRatings = {}
+      ;(ratingRows || []).forEach((row) => {
+        nextRatings[row.project_id] = row.rating
       })
-      .catch(() => {
-        setAdditionalSelections([])
-        setTopTen([])
-      })
+      setRatings(nextRatings)
+
+      const additional = data.additional ?? []
+      const ranked = data.top_ten ?? []
+      if (ranked.length === 0 && additional.length > 0) {
+        setTopTen(additional.slice(0, 10))
+        setAdditionalSelections(additional.slice(10))
+      } else {
+        setAdditionalSelections(additional)
+        setTopTen(ranked)
+      }
+    } catch {
+      setAdditionalSelections([])
+      setTopTen([])
+      setRatings({})
+    }
+  }
+
+  function ratingText(projectId) {
+    const value = ratings?.[projectId]
+    return value ? `${value}/10` : '—/10'
+  }
+
+  function ratingValue(projectId) {
+    const value = Number(ratings?.[projectId] || 0)
+    return Number.isFinite(value) ? value : 0
+  }
+
+  function RatingRow({ projectId }) {
+    const value = ratingValue(projectId)
+    return (
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <span className="sr-only">Rating {value ? `${value}/10` : 'unrated'}</span>
+        <div className="flex items-center gap-0.5 leading-none" aria-hidden="true">
+          {Array.from({ length: 10 }, (_, index) => index + 1).map((n) => (
+            <span
+              key={n}
+              className={n <= value ? 'text-amber-400' : 'text-slate-200'}
+            >
+              ★
+            </span>
+          ))}
+        </div>
+        <div>{ratingText(projectId)}</div>
+      </div>
+    )
   }
 
   async function handleSubmit() {
@@ -154,7 +195,7 @@ export default function RankingsPage() {
           >
             <div className="flex items-start justify-between gap-3">
               <div className="font-semibold">
-                {popup.type === 'error' ? 'Warning' : 'Success'}
+                {popup.type === 'error' ? 'Action Required' : 'Success'}
               </div>
               <button
                 type="button"
@@ -206,7 +247,14 @@ export default function RankingsPage() {
                 </div>
               ) : null}
             </div>
-            <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+            <button
+              type="button"
+              className="inline-flex"
+              aria-label="Go to projects"
+              onClick={() => navigate('/projects')}
+            >
+              <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
+            </button>
           </div>
         </div>
         <div>
@@ -232,6 +280,7 @@ export default function RankingsPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
+                    <RatingRow projectId={item.id} />
                     <div className="text-sm font-semibold text-duke-900">{item.title}</div>
                     <div className="text-xs text-slate-500">{item.organization}</div>
                   </div>
@@ -290,7 +339,12 @@ export default function RankingsPage() {
                 onDrop={() => onDrop('top', index)}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="text-xs font-semibold text-duke-700">#{index + 1}</div>
+                  <div>
+                    <div className="text-xs font-semibold text-duke-700">#{index + 1}</div>
+                    <div className="mt-1">
+                      <RatingRow projectId={item.id} />
+                    </div>
+                  </div>
                   <button
                     type="button"
                     className="text-slate-400 hover:text-red-500"

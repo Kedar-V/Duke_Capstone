@@ -33,13 +33,14 @@ def _get_hmac_key() -> bytes:
 
 
 def encrypt_teammate_choice(
-    student_id: int, preference: str, avoid_reason: str | None = None
+    student_id: int, preference: str, comment: str | None = None
 ) -> tuple[str, str]:
     payload = json.dumps(
         {
             "student_id": student_id,
             "preference": preference,
-            "avoid_reason": avoid_reason or "",
+            "comment": comment or "",
+            "avoid_reason": comment or "",
         },
         separators=(",", ":"),
     )

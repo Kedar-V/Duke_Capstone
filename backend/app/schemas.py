@@ -120,12 +120,14 @@ class TeammateChoicesIn(BaseModel):
     want_ids: List[int] = Field(default_factory=list)
     avoid_ids: List[int] = Field(default_factory=list)
     avoid_reasons: Dict[int, str] = Field(default_factory=dict)
+    comments: Dict[int, str] = Field(default_factory=dict)
 
 
 class TeammateChoicesOut(BaseModel):
     want_ids: List[int] = Field(default_factory=list)
     avoid_ids: List[int] = Field(default_factory=list)
     avoid_reasons: Dict[int, str] = Field(default_factory=dict)
+    comments: Dict[int, str] = Field(default_factory=dict)
 
 
 class FilterOptionsOut(BaseModel):
