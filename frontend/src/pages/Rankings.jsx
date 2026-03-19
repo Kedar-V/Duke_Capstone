@@ -8,6 +8,8 @@ export default function RankingsPage() {
   const [additionalSelections, setAdditionalSelections] = useState([])
   const [topTen, setTopTen] = useState([])
   const [dragItem, setDragItem] = useState(null)
+  const [dragEnabled, setDragEnabled] = useState(true)
+  const [topTenHidden, setTopTenHidden] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [popup, setPopup] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -24,6 +26,21 @@ export default function RankingsPage() {
         clearTimeout(popupTimerRef.current)
       }
     }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return
+    }
+
+    const mediaQuery = window.matchMedia('(pointer: coarse)')
+    const updateDragAvailability = () => {
+      setDragEnabled(!mediaQuery.matches)
+    }
+
+    updateDragAvailability()
+    mediaQuery.addEventListener('change', updateDragAvailability)
+    return () => mediaQuery.removeEventListener('change', updateDragAvailability)
   }, [])
 
   function showPopup(type, text) {
@@ -114,6 +131,7 @@ export default function RankingsPage() {
   }
 
   function onDragStart(listName, index) {
+    if (!dragEnabled) return
     setDragItem({ listName, index })
   }
 
@@ -176,7 +194,7 @@ export default function RankingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-48">
+    <div className={`min-h-screen bg-slate-50 ${topTenHidden ? 'pb-24' : 'pb-72'}`}>
       {popup ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/30"
@@ -210,7 +228,7 @@ export default function RankingsPage() {
           </div>
         </div>
       ) : null}
-      <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
+      <div className="max-w-6xl mx-auto px-4 py-10 pb-16 space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -269,11 +287,11 @@ export default function RankingsPage() {
             {additionalSelections.map((item, index) => (
               <div
                 key={item.id}
-                className="card p-4 transition-transform duration-150 hover:-translate-y-0.5"
+                className={`card p-4 transition-transform duration-150 hover:-translate-y-0.5 ${dragEnabled ? 'cursor-grab' : ''}`}
                 role="button"
                 tabIndex={0}
                 aria-disabled="false"
-                draggable
+                draggable={dragEnabled}
                 onDragStart={() => onDragStart('additional', index)}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={() => onDrop('additional', index)}
@@ -303,14 +321,35 @@ export default function RankingsPage() {
             ))}
           </div>
         </div>
+
+        {!topTenHidden ? <div className="h-80 md:h-72" aria-hidden="true" /> : null}
       </div>
 
-      <section className="fixed bottom-0 left-0 right-0 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.08)] border-t border-slate-200 ">
+      {topTenHidden ? (
+        <button
+          type="button"
+          className="fixed bottom-4 right-4 z-40 btn-secondary shadow-sm"
+          onClick={() => setTopTenHidden(false)}
+        >
+          Show Top 10
+        </button>
+      ) : null}
+
+      <section
+        className={`${topTenHidden ? 'hidden' : 'fixed'} bottom-0 left-0 right-0 bg-white shadow-[0_-2px_10px_rgba(0,0,0,0.08)] border-t border-slate-200`}
+      >
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-heading text-duke-900">Your Top 10 Choices (Ranked)</h3>
             <div className="flex items-center gap-3">
               <div className="text-sm text-slate-500">{topTen.length}/10 ranked</div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setTopTenHidden(true)}
+              >
+                Hide
+              </button>
               <button
                 type="button"
                 className="btn-primary"
@@ -329,11 +368,11 @@ export default function RankingsPage() {
             {topTen.map((item, index) => (
               <div
                 key={item.id}
-                className="w-[220px] shrink-0 rounded-xl bg-white border border-slate-200 p-3 transition-transform duration-150 hover:-translate-y-0.5"
+                className={`w-[220px] shrink-0 rounded-xl bg-white border border-slate-200 p-3 transition-transform duration-150 hover:-translate-y-0.5 ${dragEnabled ? 'cursor-grab' : ''}`}
                 role="button"
                 tabIndex={0}
                 aria-disabled="false"
-                draggable
+                draggable={dragEnabled}
                 onDragStart={() => onDragStart('top', index)}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={() => onDrop('top', index)}
