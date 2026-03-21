@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { login, register } from '../api'
 import { setAuth } from '../auth'
+import footerBadge from '../assets/footer-badge.svg'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 export default function LoginPage() {
@@ -144,6 +145,11 @@ export default function LoginPage() {
         {/* <div className="mt-4 text-xs text-slate-500">
           Dev default: <span className="font-mono">dev@duke.edu</span> / <span className="font-mono">devpassword</span>
         </div> */}
+
+      </div>
+
+      <div className="fixed bottom-4 left-4 z-20">
+        <img src={footerBadge} alt="© Designed by Kedar Vaidya (Mids 2027)" className="h-7 w-auto" />
       </div>
     </div>
   )

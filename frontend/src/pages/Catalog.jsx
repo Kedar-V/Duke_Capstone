@@ -13,6 +13,7 @@ import {
   saveRating,
 } from '../api'
 import { clearAuth, getUser } from '../auth'
+import footerBadge from '../assets/footer-badge.svg'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 function Stars({ rating, onRate }) {
@@ -704,6 +705,10 @@ export default function CatalogPage() {
               </>
             )}
           </div>
+        </div>
+
+        <div className="flex justify-start pt-2">
+          <img src={footerBadge} alt="© Designed by Kedar Vaidya (Mids 2027)" className="h-7 w-auto" />
         </div>
       </div>
     </div>

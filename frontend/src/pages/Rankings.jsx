@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getRankings, getRatings, removeCartItem, saveRankings } from '../api'
+import footerBadge from '../assets/footer-badge.svg'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 export default function RankingsPage() {
@@ -320,6 +321,10 @@ export default function RankingsPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="flex justify-center pt-2">
+          <img src={footerBadge} alt="© Designed by Kedar Vaidya (Mids 2027)" className="h-7 w-auto" />
         </div>
 
         {!topTenHidden ? <div className="h-80 md:h-72" aria-hidden="true" /> : null}

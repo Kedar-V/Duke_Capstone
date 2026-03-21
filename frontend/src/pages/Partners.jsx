@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { getStudents, getTeammateChoices, saveTeammateChoices } from '../api'
 import { getUser } from '../auth'
+import footerBadge from '../assets/footer-badge.svg'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 
 function SectionCard({ title, subtitle, children, onDrop, onDragOver }) {
@@ -384,6 +385,10 @@ export default function PartnersPage() {
               })
             )}
           </SectionCard>
+        </div>
+
+        <div className="flex justify-start pt-2">
+          <img src={footerBadge} alt="© Designed by Kedar Vaidya (Mids 2027)" className="h-7 w-auto" />
         </div>
       </div>
     </div>
