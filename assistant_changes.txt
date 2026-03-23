@@ -1,0 +1,58 @@
+Change log (assistant-made edits)
+
+2026-03-17
+- Updated docker-compose.yml: added local Postgres service (db), a named volume, and api depends_on db.
+- Updated backend/app/db.py: removed hardcoded RDS DATABASE_URL fallback; now requires env DATABASE_URL.
+- Updated .env: set DATABASE_URL to local Docker Postgres service and commented the old RDS URL.
+- Updated backend/entrypoint.sh: converted line endings to LF to fix container startup.
+- Updated seed.sql: replaced legacy seed data with client_intake_forms-aligned seed rows plus dev user, profile, and students.
+- Updated backend/app/routers/catalog.py: removed runtime DDL helpers for ratings/teammate prefs and cleaned unused imports.
+- Updated schema.sql: added cohorts table and cohort/role columns with indexes.
+- Updated backend models/schemas/auth: added cohorts and user roles, exposed role/cohort in auth responses.
+- Added backend admin router with cohort/user/project management endpoints.
+- Updated catalog endpoints and frontend catalog to support cohort filtering.
+- Added admin UI page and admin route; added admin navigation entry.
+- Added project CSV import script and documented it in README.
+- Updated ApiContracts.md and README.md for cohorts/admin endpoints.
+- Updated seed.sql: ensure dev user is promoted to admin on reseed.
+- Added admin delete-project endpoint and UI action.
+- Added admin delete-user endpoint and UI action.
+- Updated rankings UI: smoother drag/drop feedback and live autosave of rankings.
+- Updated rankings UI: FLIP animation for smooth drag-and-drop reordering.
+- Updated seed.sql: added seeded student users for testing teammate choices.
+- Updated seed.sql: added Diwas Puri test student user.
+- Added project_id primary keys, soft delete fields, and admin audit log in schema/models.
+- Migrated API and frontend to use project_id for cart, rankings, ratings, and project detail.
+- Enforced cohort scoping and excluded deleted projects/users in API queries.
+- Added Alembic configuration and initial migration script.
+- Added a basic health endpoint test.
+- Fixed schema/migration to use a unique index instead of unsupported IF NOT EXISTS constraint.
+- Added slug support for projects in schema, models, APIs, and frontend routing.
+- Updated admin project payloads to include slug and added slug validation.
+- Reordered migration steps to drop org_name FKs before replacing the client_intake_forms primary key.
+- Fixed syntax error in catalog router where slug endpoint was nested inside a return block.
+- Updated admin UI to auto-generate project slugs from project titles unless manually overridden.
+- Added explicit New buttons and strict typed confirmation for deleting users/projects from admin lists.
+- Added admin cohort delete API with safety checks and UI delete action with typed confirmation.
+- Redesigned rankings page layout with a top-10 board, bench panel, progress bar, and quicker actions plus updated styling.
+- Switched rankings drag-and-drop to a vertical ranked/unranked layout with smooth animations and minimal styling.
+
+2026-03-18
+- Fixed rankings card navigation to prefer slug-based routes and added propagation guards for in-card action buttons.
+- Updated backend ranking card responses to include project slug and fixed duplicated slug keyword errors in catalog router constructors.
+- Added explicit rankings load error popup so API failures no longer look like empty data states.
+- Added first-login OTP setup flow (request/verify) with temporary fixed OTP `0000` and integrated it into login UX.
+- Added admin cohort CSV upload endpoint/UI for bulk student onboarding; included multipart handling dependency updates.
+- Added ranking submission lifecycle: lock on submit (`is_submitted`, `submitted_at`), submit endpoint, admin submissions list/reopen/export.
+- Updated admin submissions behavior to include non-student roles by default so admin/dev submissions are visible.
+- Expanded seed data with additional sample projects and refreshed local development data.
+- Added assignment_policy.md and linked it from README.
+- Removed public registration logic from login page; retained sign-in and first-login OTP setup path.
+- Enforced rated-only ranking rules in backend save/submit endpoints.
+- Enforced rated-only ranking interactions in frontend rankings page (disable add, block drag/add into Top 10 when unrated).
+- Enforced pre-ranking gating: projects must be rated before entering selected/cart and rankings pipeline.
+- Updated Catalog and Project Display UX to make early-stage rating available and explicit before cart/rankings.
+- Standardized responsive top menu across app pages: desktop shows full nav; mobile uses collapsed menu.
+- Renamed menu label from "Teammate Choices" to "Partners" and improved desktop spacing between logo and nav.
+- Fixed Partners header wrapper to match standardized page menu container/layout.
+- Admin page fixes: preserved success/error flashes after actions, corrected file input reset behavior, switched project list key to stable `project_id`, and added tab/tablist/tabpanel accessibility semantics.

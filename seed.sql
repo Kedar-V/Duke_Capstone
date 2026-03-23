@@ -1,59 +1,545 @@
--- Dev seed data for local docker-compose Postgres
+-- Seed data aligned with schema.sql (projects-driven)
 -- Safe to re-run (uses ON CONFLICT DO NOTHING)
 
 begin;
 
-insert into organizations (name, industry, company_size) values
-  ('Blue Ridge SaaS', 'Software', '51-200'),
-  ('Harbor Logistics', 'Logistics', '201-1000'),
-  ('QuillPay', 'Finance', '51-200'),
-  ('Solstice Utilities', 'Energy', '1000+'),
-  ('Atlas Health', 'Healthcare', '201-1000'),
-  ('Evergreen Capital', 'Finance', '201-1000'),
-  ('Northwind', 'Retail', '201-1000'),
-  ('CivicNow', 'Public Sector', '51-200'),
-  ('BrightPath', 'Education', '201-1000'),
-  ('GreenBridge', 'Climate', '51-200'),
-  ('Medway Systems', 'Healthcare', '51-200'),
-  ('MetroPulse', 'Public Sector', '201-1000')
+insert into cohorts (name, program, year)
+values
+  ('MIDS 2026', 'MIDS', 2026),
+  ('MIDS 2027', 'MIDS', 2027)
 on conflict (name) do nothing;
 
-insert into domains (name) values
-  ('AI/ML'),
-  ('Analytics'),
-  ('Data Engineering'),
-  ('Product'),
-  ('Web Dev')
+create temporary table seed_projects (
+  org_name text,
+  slug text,
+  raw jsonb,
+  org_industry text,
+  org_website text,
+  contact_name text,
+  contact_email text,
+  project_title text,
+  project_summary text,
+  project_description text,
+  minimum_deliverables text,
+  stretch_goals text,
+  long_term_impact text,
+  scope_clarity text,
+  publication_potential text,
+  required_skills jsonb,
+  technical_domains jsonb,
+  data_access text,
+  project_sector text,
+  supplementary_documents jsonb,
+  video_links jsonb,
+  cohort_id bigint,
+  created_at timestamptz,
+  updated_at timestamptz
+) on commit drop;
+
+insert into seed_projects (
+  org_name,
+  slug,
+  raw,
+  org_industry,
+  org_website,
+  contact_name,
+  contact_email,
+  project_title,
+  project_summary,
+  project_description,
+  minimum_deliverables,
+  stretch_goals,
+  long_term_impact,
+  scope_clarity,
+  publication_potential,
+  required_skills,
+  technical_domains,
+  data_access,
+  project_sector,
+  supplementary_documents,
+  video_links,
+  cohort_id,
+  created_at,
+  updated_at
+)
+values
+  (
+    'Blue Ridge SaaS',
+    'blue-ridge-saas',
+    '{}'::jsonb,
+    'Software',
+    'https://blueridgesaas.example.com',
+    'Morgan Hill',
+    'morgan@blueridgesaas.example.com',
+    'NLP for Customer Support Insights',
+    'Analyze support tickets to surface churn risk signals.',
+    'Build a topic model and summarize key churn themes from support data.',
+    'Topic model, dashboard, and summary report.',
+    'Improve auto-tagging accuracy and sentiment tracking.',
+    'Enable proactive retention outreach.',
+    'High',
+    'Yes',
+    '["Python","NLP","Topic Modeling"]'::jsonb,
+    '["AI/ML","Analytics"]'::jsonb,
+    'Sample support tickets provided.',
+    'AI/ML',
+    '["Support tickets sample CSV"]'::jsonb,
+    '["https://youtu.be/example1"]'::jsonb,
+    (select id from cohorts where name='MIDS 2026'),
+    now(),
+    now()
+  ),
+  (
+    'Harbor Logistics',
+    'harbor-logistics',
+    '{}'::jsonb,
+    'Logistics',
+    'https://harborlogistics.example.com',
+    'Avery Grant',
+    'avery@harborlogistics.example.com',
+    'Supply Chain Risk Scorecard',
+    'Design a scorecard to predict disruption risk.',
+    'Blend macro data and vendor KPIs to forecast disruption risk.',
+    'Risk score dashboard and data dictionary.',
+    'Auto-refresh pipeline and alerting.',
+    'Reduce delay incidents by 10%.',
+    'Medium',
+    'No',
+    '["SQL","Tableau","Data Modeling"]'::jsonb,
+    '["Analytics"]'::jsonb,
+    'Historical vendor performance data.',
+    'Analytics',
+    '["Vendor KPI glossary"]'::jsonb,
+    '["https://youtu.be/example2"]'::jsonb,
+    (select id from cohorts where name='MIDS 2026'),
+    now(),
+    now()
+  ),
+  (
+    'QuillPay',
+    'quillpay',
+    '{}'::jsonb,
+    'Finance',
+    'https://quillpay.example.com',
+    'Priya Shah',
+    'priya@quillpay.example.com',
+    'Product Growth Experimentation Lab',
+    'Prioritize experiments to lift trial-to-paid conversion.',
+    'Analyze funnel data and design a growth experimentation backlog.',
+    'Experiment roadmap and KPI dashboard.',
+    'Cohort analysis and next-step experiments.',
+    'Increase activation rate.',
+    'Medium',
+    'Yes',
+    '["A/B Testing","Mixpanel","Roadmaps"]'::jsonb,
+    '["Product","Analytics"]'::jsonb,
+    'Aggregated product analytics.',
+    'Product',
+    '["Funnel event catalog"]'::jsonb,
+    '["https://youtu.be/example3"]'::jsonb,
+    (select id from cohorts where name='MIDS 2027'),
+    now(),
+    now()
+  ),
+  (
+    'Solstice Utilities',
+    'solstice-utilities',
+    '{}'::jsonb,
+    'Energy',
+    'https://solstice.example.com',
+    'Leo Diaz',
+    'leo@solstice.example.com',
+    'Real-Time Energy Forecast Pipeline',
+    'Streaming pipeline for hourly energy demand forecasting.',
+    'Build a streaming pipeline to forecast demand with alerting.',
+    'Streaming pipeline and forecast dashboard.',
+    'Automated model retraining.',
+    'Improve demand planning accuracy.',
+    'High',
+    'Yes',
+    '["Kafka","Spark","AWS"]'::jsonb,
+    '["Data Engineering"]'::jsonb,
+    'IoT telemetry and historical demand.',
+    'Data Engineering',
+    '["Telemetry schema"]'::jsonb,
+    '["https://youtu.be/example4"]'::jsonb,
+    (select id from cohorts where name='MIDS 2027'),
+    now(),
+    now()
+  ),
+  (
+    'Atlas Health',
+    'atlas-health',
+    '{}'::jsonb,
+    'Healthcare',
+    'https://atlashealth.example.com',
+    'Sasha Patel',
+    'sasha@atlashealth.example.com',
+    'Customer Churn Early Warning',
+    'Detect churn signals from support logs and usage data.',
+    'Detect churn signals and build a retention dashboard.',
+    'Churn model and retention playbook.',
+    'Explainability and feature monitoring.',
+    'Reduce churn by 5%.',
+    'Medium',
+    'No',
+    '["Python","NLP","Dashboard"]'::jsonb,
+    '["AI/ML","Analytics"]'::jsonb,
+    'Anonymized usage and support data.',
+    'AI/ML',
+    '["Data dictionary"]'::jsonb,
+    '["https://youtu.be/example5"]'::jsonb,
+    (select id from cohorts where name='MIDS 2026'),
+    now(),
+    now()
+  ),
+  (
+    'Northstar Retail',
+    'northstar-retail',
+    '{}'::jsonb,
+    'Retail',
+    'https://northstarretail.example.com',
+    'Elena Brooks',
+    'elena@northstarretail.example.com',
+    'Demand Forecasting for Seasonal Inventory',
+    'Forecast demand at SKU level for seasonal assortments.',
+    'Develop a forecasting workflow for weekly demand and inventory planning.',
+    'Forecast model, feature report, and operations dashboard.',
+    'Integrate promo calendar and weather sensitivity.',
+    'Reduce stockouts and markdown losses.',
+    'High',
+    'No',
+    '["Python","Time Series","SQL"]'::jsonb,
+    '["Analytics","AI/ML"]'::jsonb,
+    'Three years of sales and promo history.',
+    'Analytics',
+    '["Sales data schema"]'::jsonb,
+    '["https://youtu.be/example6"]'::jsonb,
+    (select id from cohorts where name='MIDS 2026'),
+    now(),
+    now()
+  ),
+  (
+    'Sentinel Bio',
+    'sentinel-bio',
+    '{}'::jsonb,
+    'Biotech',
+    'https://sentinelbio.example.com',
+    'Rohan Iyer',
+    'rohan@sentinelbio.example.com',
+    'Clinical Trial Enrollment Optimizer',
+    'Identify enrollment bottlenecks across trial sites.',
+    'Build a prioritization model for outreach and trial site support.',
+    'Enrollment analytics dashboard and recommendations.',
+    'Add scenario simulation for eligibility criteria changes.',
+    'Accelerate trial enrollment timelines.',
+    'Medium',
+    'Yes',
+    '["Python","Experiment Design","Dashboard"]'::jsonb,
+    '["Analytics","Healthcare"]'::jsonb,
+    'De-identified trial operations data.',
+    'Healthcare',
+    '["Site metrics dictionary"]'::jsonb,
+    '["https://youtu.be/example7"]'::jsonb,
+    (select id from cohorts where name='MIDS 2027'),
+    now(),
+    now()
+  ),
+  (
+    'Civic Transit Lab',
+    'civic-transit-lab',
+    '{}'::jsonb,
+    'Public Sector',
+    'https://civictransit.example.com',
+    'Nina Flores',
+    'nina@civictransit.example.com',
+    'Bus Route Reliability Intelligence',
+    'Measure and improve route reliability for city bus lines.',
+    'Analyze AVL data to detect delay patterns and route pain points.',
+    'Reliability scorecard and route-level diagnostics.',
+    'Prototype alerting for persistent delay segments.',
+    'Improve rider satisfaction and planning efficiency.',
+    'Medium',
+    'No',
+    '["SQL","Geospatial","Data Visualization"]'::jsonb,
+    '["Analytics","Operations"]'::jsonb,
+    'Historical GPS pings and schedule data.',
+    'Operations',
+    '["Transit GTFS documentation"]'::jsonb,
+    '["https://youtu.be/example8"]'::jsonb,
+    (select id from cohorts where name='MIDS 2026'),
+    now(),
+    now()
+  ),
+  (
+    'Meridian Bank',
+    'meridian-bank',
+    '{}'::jsonb,
+    'Financial Services',
+    'https://meridianbank.example.com',
+    'Grace Liu',
+    'grace@meridianbank.example.com',
+    'SMB Credit Risk Monitoring',
+    'Build monitoring for early signs of portfolio deterioration.',
+    'Develop risk indicators and threshold-based monitoring for SMB loans.',
+    'Portfolio monitoring dashboard and alert policy.',
+    'Add segment-specific leading indicators.',
+    'Reduce losses through earlier intervention.',
+    'High',
+    'Yes',
+    '["SQL","Risk Analytics","Tableau"]'::jsonb,
+    '["Finance","Analytics"]'::jsonb,
+    'Monthly portfolio performance extracts.',
+    'Finance',
+    '["Loan performance definitions"]'::jsonb,
+    '["https://youtu.be/example9"]'::jsonb,
+    (select id from cohorts where name='MIDS 2027'),
+    now(),
+    now()
+  ),
+  (
+    'Aurora Media',
+    'aurora-media',
+    '{}'::jsonb,
+    'Media',
+    'https://auroramedia.example.com',
+    'Devon Price',
+    'devon@auroramedia.example.com',
+    'Content Personalization for Subscriber Retention',
+    'Improve retention through personalized content recommendations.',
+    'Prototype recommendation strategies using engagement and churn labels.',
+    'Recommendation experiment plan and retention analysis.',
+    'A/B framework for ranking algorithm variants.',
+    'Lift 90-day subscriber retention.',
+    'Medium',
+    'No',
+    '["Python","Recommender Systems","A/B Testing"]'::jsonb,
+    '["AI/ML","Product"]'::jsonb,
+    'Anonymized viewership and engagement logs.',
+    'Product',
+    '["Engagement feature catalog"]'::jsonb,
+    '["https://youtu.be/example10"]'::jsonb,
+    (select id from cohorts where name='MIDS 2026'),
+    now(),
+    now()
+  ),
+  (
+    'GreenBridge Foods',
+    'greenbridge-foods',
+    '{}'::jsonb,
+    'Consumer Goods',
+    'https://greenbridgefoods.example.com',
+    'Hannah Scott',
+    'hannah@greenbridgefoods.example.com',
+    'Pricing Elasticity & Promotion Mix',
+    'Estimate price elasticity across top product families.',
+    'Quantify promotion effects and optimize discount strategy by channel.',
+    'Elasticity model and promotion optimizer recommendations.',
+    'Incorporate competitor pricing signals.',
+    'Improve revenue and margin balance.',
+    'High',
+    'No',
+    '["Econometrics","Python","SQL"]'::jsonb,
+    '["Analytics","Marketing"]'::jsonb,
+    'POS, promotion, and baseline pricing data.',
+    'Marketing',
+    '["Historical promotion calendar"]'::jsonb,
+    '["https://youtu.be/example11"]'::jsonb,
+    (select id from cohorts where name='MIDS 2027'),
+    now(),
+    now()
+  ),
+  (
+    'Delta Manufacturing',
+    'delta-manufacturing',
+    '{}'::jsonb,
+    'Manufacturing',
+    'https://deltamfg.example.com',
+    'Carlos Mendes',
+    'carlos@deltamfg.example.com',
+    'Predictive Maintenance for Production Lines',
+    'Predict failure risk from sensor readings and maintenance logs.',
+    'Build a maintenance prioritization model and downtime tracker.',
+    'Risk model, maintenance queue, and KPI dashboard.',
+    'Deploy real-time anomaly monitoring pilot.',
+    'Reduce unplanned downtime.',
+    'High',
+    'Yes',
+    '["Python","Time Series","MLOps"]'::jsonb,
+    '["AI/ML","Operations"]'::jsonb,
+    'Sensor telemetry and maintenance history.',
+    'Operations',
+    '["Equipment metadata"]'::jsonb,
+    '["https://youtu.be/example12"]'::jsonb,
+    (select id from cohorts where name='MIDS 2026'),
+    now(),
+    now()
+  ),
+  (
+    'Skyline Public Health',
+    'skyline-public-health',
+    '{}'::jsonb,
+    'Public Health',
+    'https://skylinehealth.example.com',
+    'Mira Khan',
+    'mira@skylinehealth.example.com',
+    'Community Risk Surveillance Dashboard',
+    'Track and forecast community-level health risk indicators.',
+    'Integrate claims, clinic, and social vulnerability data for monitoring.',
+    'Interactive surveillance dashboard and monthly forecast brief.',
+    'Add intervention impact analysis module.',
+    'Support earlier public health interventions.',
+    'Medium',
+    'Yes',
+    '["SQL","Python","Data Visualization"]'::jsonb,
+    '["Healthcare","Analytics"]'::jsonb,
+    'De-identified claims and clinic encounter aggregates.',
+    'Healthcare',
+    '["Indicator definitions"]'::jsonb,
+    '["https://youtu.be/example13"]'::jsonb,
+    (select id from cohorts where name='MIDS 2027'),
+    now(),
+    now()
+  );
+
+insert into companies (name, industry, website)
+select distinct sp.org_name, sp.org_industry, sp.org_website
+from seed_projects sp
+where sp.org_name is not null and btrim(sp.org_name) <> ''
 on conflict (name) do nothing;
 
--- Tags (a subset used in the mock)
-insert into tags (name) values
-  ('Python'), ('NLP'), ('Topic Modeling'),
-  ('SQL'), ('Tableau'), ('Data Modeling'),
-  ('A/B Testing'), ('Mixpanel'), ('Roadmaps'),
-  ('Kafka'), ('Spark'), ('AWS'),
-  ('Dashboard'),
-  ('Machine Learning'), ('Risk'), ('Pipelines'),
-  ('Time Series'), ('Visualization'),
-  ('LLM'), ('UX'), ('Prompting'),
-  ('Analytics'), ('APIs'), ('Dashboards'),
-  ('Product'),
-  ('Data Engineering'), ('IoT'), ('Cloud'),
-  ('Causal Inference'), ('R'), ('Policy'),
-  ('Data Viz'), ('Storytelling'),
-  ('Graph Analytics'), ('ML'),
-  ('GIS')
-on conflict (name) do nothing;
+insert into projects (
+  slug,
+  raw,
+  contact_name,
+  contact_email,
+  project_title,
+  project_summary,
+  project_description,
+  minimum_deliverables,
+  stretch_goals,
+  long_term_impact,
+  scope_clarity,
+  publication_potential,
+  required_skills,
+  technical_domains,
+  data_access,
+  project_sector,
+  supplementary_documents,
+  video_links,
+  cohort_id,
+  created_at,
+  updated_at
+)
+select
+  sp.slug,
+  sp.raw,
+  sp.contact_name,
+  sp.contact_email,
+  sp.project_title,
+  sp.project_summary,
+  sp.project_description,
+  sp.minimum_deliverables,
+  sp.stretch_goals,
+  sp.long_term_impact,
+  sp.scope_clarity,
+  sp.publication_potential,
+  sp.required_skills,
+  sp.technical_domains,
+  sp.data_access,
+  sp.project_sector,
+  sp.supplementary_documents,
+  sp.video_links,
+  sp.cohort_id,
+  sp.created_at,
+  sp.updated_at
+from seed_projects sp
+on conflict (slug) do nothing;
 
--- Skills (optional; keep small)
-insert into skills (name) values
-  ('Python'), ('TensorFlow'), ('SQL'), ('Kafka'), ('Spark'), ('AWS'), ('Tableau')
-on conflict (name) do nothing;
+insert into project_companies (project_id, company_id)
+select p.project_id, c.id
+from seed_projects sp
+join projects p on p.slug = sp.slug
+join companies c on c.name = sp.org_name
+on conflict (project_id) do update set company_id = excluded.company_id;
 
 -- Dev user (email: dev@duke.edu, password: devpassword)
-insert into users (id, email, display_name, password_hash)
-values (1, 'dev@duke.edu', 'Dev User', '$pbkdf2-sha256$29000$FGLM.T/nPKfUupeSUup9rw$4R2VIU4NV./x9ycRFD2aaIJ0DFJTYoAcZ0aEwvR7uiU')
+insert into users (id, email, display_name, password_hash, role, cohort_id)
+values (
+  1,
+  'dev@duke.edu',
+  'Dev User',
+  '$pbkdf2-sha256$29000$FGLM.T/nPKfUupeSUup9rw$4R2VIU4NV./x9ycRFD2aaIJ0DFJTYoAcZ0aEwvR7uiU',
+  'admin',
+  (select id from cohorts where name='MIDS 2026')
+)
 on conflict (id) do nothing;
+
+update users
+set role = 'admin',
+    cohort_id = (select id from cohorts where name='MIDS 2026')
+where email = 'dev@duke.edu';
+
+-- MIDS 2027 student roster users (password: devpassword)
+with mids_2027_roster(display_name, email) as (
+  values
+    ('Jordan Andrew', 'jordan.andrew@duke.edu'),
+    ('Michael Kofi Badu', 'michael.kofi.badu@duke.edu'),
+    ('Pranshul Bhatnagar', 'pranshul.bhatnagar@duke.edu'),
+    ('Yuheng "Shelly" Cao', 'yuheng.cao@duke.edu'),
+    ('Caleb Carlyle', 'caleb.carlyle@duke.edu'),
+    ('Bojun "Bruce" Chen', 'bojun.chen@duke.edu'),
+    ('Oge Ezenwa', 'oge.ezenwa@duke.edu'),
+    ('Matthew Fischer', 'matthew.fischer@duke.edu'),
+    ('Aesha Gandhi', 'aesha.gandhi@duke.edu'),
+    ('Pinaki Ghosh', 'pinaki.ghosh@duke.edu'),
+    ('Lingyue Hao', 'lingyue.hao@duke.edu'),
+    ('Sejal Jagtap', 'sejal.jagtap@duke.edu'),
+    ('He Jiang', 'he.jiang@duke.edu'),
+    ('Ananya Jogalekar', 'ananya.jogalekar@duke.edu'),
+    ('Arvind Kandala', 'arvind.kandala@duke.edu'),
+    ('Shambhavi Khanna', 'shambhavi.khanna@duke.edu'),
+    ('Gaurav Law', 'gaurav.law@duke.edu'),
+    ('Ammy Lin', 'ammy.lin@duke.edu'),
+    ('Vihaan Manchanda', 'vihaan.manchanda@duke.edu'),
+    ('Farnoosh Memari', 'farnoosh.memari@duke.edu'),
+    ('Supriya Nannapaneni', 'supriya.nannapaneni@duke.edu'),
+    ('Tony Ngari', 'tony.ngari@duke.edu'),
+    ('Seohyun "Claire" Oh', 'seohyun.oh@duke.edu'),
+    ('Diwas Puri', 'diwas.puri@duke.edu'),
+    ('Tonantzin Real Rojas', 'tonantzin.rojas@duke.edu'),
+    ('Sebine Scaria', 'sebine.scaria@duke.edu'),
+    ('Myla Simmons', 'myla.simmons@duke.edu'),
+    ('Arushi Singh', 'arushi.singh@duke.edu'),
+    ('Anvita Suresh', 'anvita.suresh@duke.edu'),
+    ('Tea Tafaj', 'tea.tafaj@duke.edu'),
+    ('Temesgen Tewolde', 'temesgen.tewolde@duke.edu'),
+    ('Kedar Vaidya', 'kedar.vaidya@duke.edu'),
+    ('Isaac Vergara', 'isaac.vergara@duke.edu'),
+    ('Yuqian Wang', 'yuqian.wang@duke.edu'),
+    ('Mingjie Wei', 'mingjie.wei@duke.edu'),
+    ('Sung-Tse "Jay" Wu', 'sungtse.wu@duke.edu'),
+    ('Qingyu "Grace" Yang', 'qingyu.yang@duke.edu'),
+    ('Yiyun "Leo" Yao', 'yiyun.yao@duke.edu'),
+    ('Yetong "Tina" Yuan', 'yetong.yuan@duke.edu'),
+    ('Chuhan "Brynn" Zhang', 'chuhan.zhang@duke.edu'),
+    ('Xinhao "Austin" Zhang', 'xinhao.zhang@duke.edu'),
+    ('Xihan "Patrick" Zhu', 'xihan.zhu@duke.edu')
+)
+insert into users (email, display_name, password_hash, role, cohort_id)
+select
+  r.email,
+  r.display_name,
+  '$pbkdf2-sha256$29000$FGLM.T/nPKfUupeSUup9rw$4R2VIU4NV./x9ycRFD2aaIJ0DFJTYoAcZ0aEwvR7uiU',
+  'student',
+  (select id from cohorts where name='MIDS 2027')
+from mids_2027_roster r
+on conflict (email) do update set
+  display_name = excluded.display_name,
+  role = 'student',
+  cohort_id = excluded.cohort_id,
+  deleted_at = null,
+  password_hash = coalesce(users.password_hash, excluded.password_hash);
 
 select setval('users_id_seq', greatest((select max(id) from users), 1));
 
@@ -61,185 +547,61 @@ insert into user_profiles (user_id, avg_match_score)
 values (1, 86)
 on conflict (user_id) do nothing;
 
-insert into students (full_name, email, program) values
-  ('Avery Patel', 'avery.patel@duke.edu', 'MIDS'),
-  ('Jordan Lee', 'jordan.lee@duke.edu', 'MIDS'),
-  ('Maya Chen', 'maya.chen@duke.edu', 'MIDS'),
-  ('Riley Garcia', 'riley.garcia@duke.edu', 'MQM'),
-  ('Noah Johnson', 'noah.johnson@duke.edu', 'MQM'),
-  ('Sophia Nguyen', 'sophia.nguyen@duke.edu', 'MIDS'),
-  ('Ethan Brooks', 'ethan.brooks@duke.edu', 'MIDS'),
-  ('Olivia Davis', 'olivia.davis@duke.edu', 'MIDS'),
-  ('Liam Turner', 'liam.turner@duke.edu', 'MQM'),
-  ('Isabella Reed', 'isabella.reed@duke.edu', 'MIDS'),
-  ('Caleb Wright', 'caleb.wright@duke.edu', 'MIDS'),
-  ('Zoey Foster', 'zoey.foster@duke.edu', 'MIDS'),
-  ('Lucas Kim', 'lucas.kim@duke.edu', 'MQM'),
-  ('Nora Allen', 'nora.allen@duke.edu', 'MIDS'),
-  ('Miles Carter', 'miles.carter@duke.edu', 'MIDS')
-on conflict (email) do nothing;
-
--- Helper CTEs to map names to ids
-with
-  orgs as (select id, name from organizations),
-  doms as (select id, name from domains)
-insert into projects (
-  title, description, duration_weeks,
-  domain_id, organization_id,
-  difficulty, modality,
-  min_hours_per_week, max_hours_per_week,
-  is_active
-)
-values
-  (
-    'NLP for Customer Support Insights',
-    'Analyze support tickets and build a topic model to surface churn risk signals for service leaders.',
-    8,
-    (select id from doms where name='AI/ML'),
-    (select id from orgs where name='Blue Ridge SaaS'),
-    'Advanced', 'Remote', 10, 12, true
-  ),
-  (
-    'Supply Chain Risk Scorecard',
-    'Design a multi-factor scorecard that blends macroeconomic and vendor data to predict disruption risk.',
-    10,
-    (select id from doms where name='Analytics'),
-    (select id from orgs where name='Harbor Logistics'),
-    'Intermediate', 'Hybrid', 8, 10, true
-  ),
-  (
-    'Product Growth Experimentation Lab',
-    'Run a funnel analysis and prioritize experiments to lift trial-to-paid conversion for a fintech app.',
-    6,
-    (select id from doms where name='Product'),
-    (select id from orgs where name='QuillPay'),
-    'Introductory', 'Remote', 6, 8, true
-  ),
-  (
-    'Real-Time Energy Forecast Pipeline',
-    'Build a streaming pipeline for hourly energy demand forecasting and alerting.',
-    12,
-    (select id from doms where name='Data Engineering'),
-    (select id from orgs where name='Solstice Utilities'),
-    'Advanced', 'In-person', 12, 15, true
-  ),
-  (
-    'Customer Churn Early Warning',
-    'Detect churn signals from support logs and usage data to inform retention.',
-    8,
-    (select id from doms where name='AI/ML'),
-    (select id from orgs where name='Atlas Health'),
-    'Intermediate', 'Remote', 8, 10, true
-  ),
-  (
-    'ESG Signal Scoring',
-    'Score ESG disclosures and build a monitoring dashboard for investors.',
-    10,
-    (select id from doms where name='Analytics'),
-    (select id from orgs where name='Evergreen Capital'),
-    'Advanced', 'Hybrid', 10, 12, true
-  ),
-  (
-    'Retail Demand Forecasting',
-    'Forecast weekly demand by category and improve inventory planning.',
-    8,
-    (select id from doms where name='Analytics'),
-    (select id from orgs where name='Northwind'),
-    'Intermediate', 'Remote', 8, 10, true
-  ),
-  (
-    'Conversational FAQ Assistant',
-    'Design a conversational assistant to resolve common service requests.',
-    6,
-    (select id from doms where name='Product'),
-    (select id from orgs where name='CivicNow'),
-    'Introductory', 'Remote', 6, 8, true
-  ),
-  (
-    'Supply Chain Risk Radar',
-    'Blend vendor and macro data to predict disruption risk.',
-    10,
-    (select id from doms where name='Analytics'),
-    (select id from orgs where name='Harbor Logistics'),
-    'Advanced', 'Hybrid', 10, 12, true
-  ),
-  (
-    'Personalized Learning Journeys',
-    'Improve student engagement with personalized learning recommendations.',
-    8,
-    (select id from doms where name='Product'),
-    (select id from orgs where name='BrightPath'),
-    'Intermediate', 'Hybrid', 8, 10, true
-  ),
-  (
-    'Energy Usage Optimization',
-    'Optimize energy usage patterns with real-time telemetry data.',
-    12,
-    (select id from doms where name='Data Engineering'),
-    (select id from orgs where name='Solstice Utilities'),
-    'Advanced', 'In-person', 12, 15, true
-  ),
-  (
-    'Climate Grant Impact Modeling',
-    'Measure the impact of climate grants across communities.',
-    10,
-    (select id from doms where name='Analytics'),
-    (select id from orgs where name='GreenBridge'),
-    'Intermediate', 'Remote', 8, 10, true
-  ),
-  (
-    'Hospital Readmission Insights',
-    'Analyze readmission patterns and build an executive dashboard.',
-    6,
-    (select id from doms where name='Analytics'),
-    (select id from orgs where name='Medway Systems'),
-    'Introductory', 'Remote', 6, 8, true
-  ),
-  (
-    'Fraud Pattern Discovery',
-    'Detect fraud rings with graph analytics and anomaly detection.',
-    10,
-    (select id from doms where name='AI/ML'),
-    (select id from orgs where name='QuillPay'),
-    'Advanced', 'Remote', 10, 12, true
-  ),
-  (
-    'Urban Mobility Equity',
-    'Map mobility gaps and propose equitable transit solutions.',
-    8,
-    (select id from doms where name='Analytics'),
-    (select id from orgs where name='MetroPulse'),
-    'Intermediate', 'Hybrid', 8, 10, true
-  )
-on conflict do nothing;
-
--- Link tags to projects by title
-with
-  p as (select id, title from projects),
-  t as (select id, name from tags)
-insert into project_tags (project_id, tag_id)
-select p.id, t.id
-from (
+with mids_2027_roster(full_name, email) as (
   values
-    ('NLP for Customer Support Insights', array['Python','NLP','Topic Modeling']),
-    ('Supply Chain Risk Scorecard', array['SQL','Tableau','Data Modeling']),
-    ('Product Growth Experimentation Lab', array['A/B Testing','Mixpanel','Roadmaps']),
-    ('Real-Time Energy Forecast Pipeline', array['Kafka','Spark','AWS']),
-    ('Customer Churn Early Warning', array['Python','NLP','Dashboard']),
-    ('ESG Signal Scoring', array['Machine Learning','Risk','Pipelines']),
-    ('Retail Demand Forecasting', array['Time Series','SQL','Visualization']),
-    ('Conversational FAQ Assistant', array['LLM','UX','Prompting']),
-    ('Supply Chain Risk Radar', array['Analytics','APIs','Dashboards']),
-    ('Personalized Learning Journeys', array['Product','A/B Testing','SQL']),
-    ('Energy Usage Optimization', array['Data Engineering','IoT','Cloud']),
-    ('Climate Grant Impact Modeling', array['Causal Inference','R','Policy']),
-    ('Hospital Readmission Insights', array['Data Viz','SQL','Storytelling']),
-    ('Fraud Pattern Discovery', array['Graph Analytics','Python','ML']),
-    ('Urban Mobility Equity', array['GIS','Policy','Dashboards'])
-) as x(title, tag_names)
-join p on p.title = x.title
-join lateral unnest(x.tag_names) as tn(name) on true
-join t on t.name = tn.name
-on conflict do nothing;
+    ('Jordan Andrew', 'jordan.andrew@duke.edu'),
+    ('Michael Kofi Badu', 'michael.kofi.badu@duke.edu'),
+    ('Pranshul Bhatnagar', 'pranshul.bhatnagar@duke.edu'),
+    ('Yuheng "Shelly" Cao', 'yuheng.cao@duke.edu'),
+    ('Caleb Carlyle', 'caleb.carlyle@duke.edu'),
+    ('Bojun "Bruce" Chen', 'bojun.chen@duke.edu'),
+    ('Oge Ezenwa', 'oge.ezenwa@duke.edu'),
+    ('Matthew Fischer', 'matthew.fischer@duke.edu'),
+    ('Aesha Gandhi', 'aesha.gandhi@duke.edu'),
+    ('Pinaki Ghosh', 'pinaki.ghosh@duke.edu'),
+    ('Lingyue Hao', 'lingyue.hao@duke.edu'),
+    ('Sejal Jagtap', 'sejal.jagtap@duke.edu'),
+    ('He Jiang', 'he.jiang@duke.edu'),
+    ('Ananya Jogalekar', 'ananya.jogalekar@duke.edu'),
+    ('Arvind Kandala', 'arvind.kandala@duke.edu'),
+    ('Shambhavi Khanna', 'shambhavi.khanna@duke.edu'),
+    ('Gaurav Law', 'gaurav.law@duke.edu'),
+    ('Ammy Lin', 'ammy.lin@duke.edu'),
+    ('Vihaan Manchanda', 'vihaan.manchanda@duke.edu'),
+    ('Farnoosh Memari', 'farnoosh.memari@duke.edu'),
+    ('Supriya Nannapaneni', 'supriya.nannapaneni@duke.edu'),
+    ('Tony Ngari', 'tony.ngari@duke.edu'),
+    ('Seohyun "Claire" Oh', 'seohyun.oh@duke.edu'),
+    ('Diwas Puri', 'diwas.puri@duke.edu'),
+    ('Tonantzin Real Rojas', 'tonantzin.rojas@duke.edu'),
+    ('Sebine Scaria', 'sebine.scaria@duke.edu'),
+    ('Myla Simmons', 'myla.simmons@duke.edu'),
+    ('Arushi Singh', 'arushi.singh@duke.edu'),
+    ('Anvita Suresh', 'anvita.suresh@duke.edu'),
+    ('Tea Tafaj', 'tea.tafaj@duke.edu'),
+    ('Temesgen Tewolde', 'temesgen.tewolde@duke.edu'),
+    ('Kedar Vaidya', 'kedar.vaidya@duke.edu'),
+    ('Isaac Vergara', 'isaac.vergara@duke.edu'),
+    ('Yuqian Wang', 'yuqian.wang@duke.edu'),
+    ('Mingjie Wei', 'mingjie.wei@duke.edu'),
+    ('Sung-Tse "Jay" Wu', 'sungtse.wu@duke.edu'),
+    ('Qingyu "Grace" Yang', 'qingyu.yang@duke.edu'),
+    ('Yiyun "Leo" Yao', 'yiyun.yao@duke.edu'),
+    ('Yetong "Tina" Yuan', 'yetong.yuan@duke.edu'),
+    ('Chuhan "Brynn" Zhang', 'chuhan.zhang@duke.edu'),
+    ('Xinhao "Austin" Zhang', 'xinhao.zhang@duke.edu'),
+    ('Xihan "Patrick" Zhu', 'xihan.zhu@duke.edu')
+)
+insert into students (full_name, email, program, cohort_id)
+select
+  r.full_name,
+  r.email,
+  'MIDS',
+  (select id from cohorts where name='MIDS 2027')
+from mids_2027_roster r
+on conflict (email) do update set
+  full_name = excluded.full_name,
+  program = 'MIDS',
+  cohort_id = excluded.cohort_id;
 
 commit;

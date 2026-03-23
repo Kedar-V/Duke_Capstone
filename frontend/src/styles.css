@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -43,5 +45,154 @@
 
   .tag {
     @apply inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700;
+  }
+
+  .project-card {
+    @apply flex flex-col gap-4 p-5 transition-all duration-200;
+  }
+
+  .project-card:hover {
+    @apply border-duke-700/30 shadow-lg -translate-y-1;
+  }
+
+  .project-card-top {
+    @apply space-y-1;
+  }
+
+  .project-card-title {
+    @apply text-xl font-semibold text-slate-900 leading-tight;
+  }
+
+  .project-card-description {
+    @apply text-sm text-slate-600 leading-relaxed;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .project-card-duration {
+    @apply inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100/80 rounded-full px-3 py-1 border border-slate-200/60;
+  }
+
+  .project-card-rating {
+    @apply rounded-xl border border-slate-200/70 bg-slate-50/50 px-3 py-3;
+  }
+
+  .project-card-meta {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .project-meta-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm hover:border-duke-700/20 hover:bg-slate-50 transition-colors;
+  }
+
+  .project-card-tags {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .project-card-footer {
+    @apply pt-3 border-t border-slate-100 flex flex-col gap-3 md:flex-row md:items-center md:justify-between;
+  }
+
+  .project-card-actions {
+    @apply flex-wrap;
+  }
+
+  .org-logo-frame {
+    @apply inline-flex items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white;
+  }
+
+  .org-logo-frame-sm {
+    @apply w-12 h-8 p-1;
+  }
+
+  .org-logo-frame-lg {
+    @apply w-16 h-12 md:w-20 md:h-14 p-1.5;
+  }
+
+  .org-logo-img {
+    @apply w-full h-full object-contain;
+  }
+
+  .org-logo-fallback {
+    @apply text-slate-500 font-bold tracking-wide;
+  }
+
+
+
+
+
+
+
+  .rankings-progress {
+    @apply mt-4 h-2 w-full rounded-full bg-slate-200/70;
+    overflow: hidden;
+  }
+
+  .rankings-progress > span {
+    @apply block h-full rounded-full;
+    background: linear-gradient(90deg, #1d4ed8, #0ea5e9);
+    transition: width 200ms ease;
+  }
+
+
+  .rankings-list {
+    @apply mt-4 grid grid-cols-1 gap-3 md:grid-cols-2;
+  }
+
+  .rankings-card {
+    @apply rounded-2xl border border-slate-200 bg-white p-4;
+    cursor: grab;
+  }
+
+  .rankings-card.is-dragging {
+    @apply opacity-70;
+    cursor: grabbing;
+  }
+
+  .rankings-card.is-active {
+    @apply ring-2 ring-duke-700/40;
+  }
+
+  .rankings-rank {
+    @apply text-xs font-semibold text-duke-700;
+  }
+
+  .rankings-placeholder {
+    @apply flex items-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500;
+    min-height: 88px;
+  }
+
+  .rankings-slot {
+    @apply flex flex-col items-start justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-left;
+    min-height: 112px;
+  }
+
+  .rankings-slot.is-active {
+    @apply border-duke-700/60 bg-blue-50;
+  }
+
+  .rankings-slot-index {
+    @apply text-xs font-semibold text-duke-700;
+  }
+
+  .rankings-empty {
+    @apply rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500;
+  }
+
+  .rankings-fade-in {
+    animation: rankingsFade 420ms ease both;
+  }
+}
+
+@keyframes rankingsFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }

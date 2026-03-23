@@ -1,14 +1,26 @@
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import CatalogPage from './pages/Catalog'
 import LoginPage from './pages/Login'
 import PartnersPage from './pages/Partners'
+import ProfilePage from './pages/Profile'
 import ProjectDisplayPage from './pages/ProjectDisplay'
 import RankingsPage from './pages/Rankings'
-import { getToken } from './auth'
+import AdminPage from './pages/Admin'
+import { getToken, getUser, onAuthChanged } from './auth'
 
 export default function App() {
+  const [, setAuthVersion] = useState(0)
+
+  useEffect(() => {
+    return onAuthChanged(() => {
+      setAuthVersion((v) => v + 1)
+    })
+  }, [])
+
   const isAuthed = Boolean(getToken())
+  const isAdmin = getUser()?.role === 'admin'
 
   return (
     <Routes>
@@ -16,11 +28,11 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/projects"
-        element={isAuthed ? <CatalogPage /> : <Navigate to="/login" replace />}
+        element={<CatalogPage />}
       />
       <Route
-        path="/projects/:projectId"
-        element={isAuthed ? <ProjectDisplayPage /> : <Navigate to="/login" replace />}
+        path="/projects/:projectSlug"
+        element={<ProjectDisplayPage />}
       />
       <Route
         path="/partners"
@@ -29,6 +41,14 @@ export default function App() {
       <Route
         path="/rankings"
         element={isAuthed ? <RankingsPage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/profile"
+        element={isAuthed ? <ProfilePage /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/admin"
+        element={isAdmin ? <AdminPage /> : <Navigate to="/projects" replace />}
       />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

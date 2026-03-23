@@ -1,0 +1,28 @@
+Session Summary - March 18, 2026
+
+1. Backend & API Fixes
+- Fixed a 500 server error preventing user login by correcting a syntax bug in `backend/app/routers/catalog.py` (project slug route incorrectly nested).
+- Enabled Cohort Management: Added a `DELETE /api/admin/cohorts/{cohort_id}` endpoint. Added strict relational checks to prevent deletion if users, students, or projects remain attached to the cohort.
+
+2. Admin Interface Overhaul (`frontend/src/pages/Admin.jsx`)
+- Project Slugs: Implemented auto-generation of URL slugs based on project titles, with a fallback button for admins to easily reset/regenerate them.
+- Strict Deletion Verification: Upgraded delete buttons for Users, Projects, and Cohorts to require strict `window.prompt` confirmation (requiring the admin to explicitly type the name/email to execute the destructive action).
+- Clear action buttons: Cleaned up JSX ternary renders and provided distinct "New Project" and "New User" buttons for quicker creation.
+
+3. Rankings Dashboard Redesign (`frontend/src/pages/Rankings.jsx`)
+- Layout Overhaul: Rebuilt the layout from scratch based on first principles, shifting from horizontal rows to a clean, side-by-side vertical layout (Top 10 Ranked vs. Unranked Grid).
+- Aesthetics: Polished the UI with custom typography (DM Serif Display), radial gradients, and modern hover states. Eliminated the concept of a "bench" in favor of an intuitive "Top 10" and "Unranked" system.
+
+4. Premium Drag-and-Drop Implementation
+- Library Migration: Ripped out the flaky native HTML5 Drag and Drop API and migrated the frontend to `@hello-pangea/dnd` for fluid, physics-based reordering.
+- Docker Syncing: Resolved an issue where Docker anonymous volumes overshadowed the `node_modules` update, executing an overriding `npm install` directly inside the running container to sync the new library.
+
+5. Drag-and-Drop Polish & Physics Bug Fixes
+- Mouse Offset Fix: Solved a highly specific bug where dragged items "flew away" from the mouse pointer during drop interactions.
+- CSS Conflict Resolution: 
+  - Stripped `margin-bottom` attributes that confused offset math, replacing them with flex `gap-3`.
+  - Removed `transform scale()` overrides and `rankings-fade-in` animation properties that were generating rogue bounding boxes ("containing blocks").
+- Performance: Removed `<React.StrictMode>` from `main.jsx` temporarily to resolve standard React 18 race conditions conflicting with the drag layout measurements.
+
+Next Steps (Tomorrow):
+- Further polish, testing, and making the platform even better!

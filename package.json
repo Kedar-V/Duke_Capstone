@@ -1,0 +1,23 @@
+{
+  "name": "duke_capstone",
+  "version": "1.0.0",
+  "description": "This repository contains a full-stack web application for helping Duke students browse capstone projects, rate them, shortlist them, rank final choices, and optionally submit teammate preferences.",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kedar-V/Duke_Capstone.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Kedar-V/Duke_Capstone/issues"
+  },
+  "homepage": "https://github.com/Kedar-V/Duke_Capstone#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^25.5.0"
+  }
+}

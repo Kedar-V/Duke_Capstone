@@ -1,4 +1,15 @@
 services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: duke_capstone
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - duke_capstone_db:/var/lib/postgresql/data
+
   api:
     build:
       context: ./backend
@@ -11,6 +22,8 @@ services:
       - "8001:8000"
     volumes:
       - ./backend:/app
+    depends_on:
+      - db
 
   frontend:
     build:
@@ -25,3 +38,6 @@ services:
       - /app/node_modules
     depends_on:
       - api
+
+volumes:
+  duke_capstone_db:

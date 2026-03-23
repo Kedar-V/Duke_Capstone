@@ -6,10 +6,9 @@ from sqlalchemy.orm import sessionmaker
 
 def _get_database_url() -> str:
     url = os.getenv("DATABASE_URL")
-    url = 'postgresql+psycopg2://postgres:postgresduke@duke-capstone.cnwm886wwadv.us-east-1.rds.amazonaws.com:5432/postgres'
     if url:
         return url
-    raise RuntimeError("DATABASE_URL is not set. Point it to your RDS instance.")
+    raise RuntimeError("DATABASE_URL is not set. Provide a local or remote Postgres URL.")
 
 
 DATABASE_URL = _get_database_url()

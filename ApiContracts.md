@@ -91,7 +91,7 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 ```json
 [
   {
-    "id": "Blue Ridge SaaS",
+    "id": 101,
     "title": "NLP for Customer Support Insights",
     "description": "Analyze support tickets...",
     "duration_weeks": null,
@@ -126,6 +126,7 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
   "skills": ["Dashboard", "SQL"],
   "industries": ["CPG"],
   "organization": "Duke",
+  "cohort": "MIDS 2026",
   "match_mode": "and",
   "limit": 50,
   "offset": 0
@@ -136,7 +137,7 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 ```json
 [
   {
-    "id": "Blue Ridge SaaS",
+    "id": 101,
     "title": "NLP for Customer Support Insights",
     "description": "Analyze support tickets...",
     "duration_weeks": null,
@@ -173,7 +174,8 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
   "cadences": [],
   "confidentiality": [],
   "industries": ["Software","Finance"],
-  "company_sizes": []
+  "company_sizes": [],
+  "cohorts": ["MIDS 2026","MIDS 2027"]
 }
 ```
 
@@ -203,6 +205,75 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 ```json
 [{ "id": 1, "name": "Python" }]
 ```
+
+---
+
+## Cohorts
+### `GET /api/cohorts`
+**Auth:** No
+
+**Response 200**
+```json
+[{ "id": 1, "name": "MIDS 2026", "program": "MIDS", "year": 2026 }]
+```
+
+---
+
+## Admin (role: admin)
+### `GET /api/admin/users`
+**Auth:** Yes (admin)
+
+**Response 200**
+```json
+[{ "id": 1, "email": "dev@duke.edu", "display_name": "Dev User", "role": "admin", "cohort_id": 1 }]
+```
+
+### `POST /api/admin/users`
+**Auth:** Yes (admin)
+
+**Request**
+```json
+{ "email": "student@duke.edu", "password": "secret", "display_name": "Student", "role": "student", "cohort_id": 1 }
+```
+
+### `DELETE /api/admin/users/{user_id}`
+**Auth:** Yes (admin)
+
+### `GET /api/admin/projects`
+**Auth:** Yes (admin)
+
+### `POST /api/admin/projects`
+**Auth:** Yes (admin)
+
+**Request**
+```json
+{
+  "org_name": "Blue Ridge SaaS",
+  "project_title": "NLP for Customer Support Insights",
+  "project_summary": "Analyze support tickets...",
+  "project_description": "Build a topic model...",
+  "org_industry": "Software",
+  "org_website": "https://blueridgesaas.example.com",
+  "contact_name": "Morgan Hill",
+  "contact_email": "morgan@blueridgesaas.example.com",
+  "required_skills": ["Python","NLP"],
+  "technical_domains": ["AI/ML"],
+  "project_sector": "AI/ML",
+  "cohort_id": 1
+}
+```
+
+### `PUT /api/admin/projects/{project_id}`
+**Auth:** Yes (admin)
+
+### `DELETE /api/admin/projects/{project_id}`
+**Auth:** Yes (admin)
+
+### `GET /api/admin/cohorts`
+**Auth:** Yes (admin)
+
+### `POST /api/admin/cohorts`
+**Auth:** Yes (admin)
 
 ---
 
@@ -239,7 +310,7 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
   "status": "open",
   "selected": 2,
   "limit": 10,
-  "project_ids": ["Blue Ridge SaaS","QuillPay"]
+  "project_ids": [101, 205]
 }
 ```
 
@@ -248,7 +319,7 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 
 **Request**
 ```json
-{ "project_id": "Blue Ridge SaaS" }
+{ "project_id": 101 }
 ```
 
 **Response 200** (same as `GET /api/cart`)
@@ -306,10 +377,10 @@ Auth: Bearer token in `Authorization` header for protected endpoints.
 ```json
 {
   "top_ten": [
-    { "id": "Blue Ridge SaaS", "title": "NLP for Customer Support Insights", "organization": "Blue Ridge SaaS", "tags": ["Python","NLP"] }
+    { "id": 101, "title": "NLP for Customer Support Insights", "organization": "Blue Ridge SaaS", "tags": ["Python","NLP"] }
   ],
   "additional": [
-    { "id": "QuillPay", "title": "Product Growth Experimentation Lab", "organization": "QuillPay", "tags": ["A/B Testing"] }
+    { "id": 205, "title": "Product Growth Experimentation Lab", "organization": "QuillPay", "tags": ["A/B Testing"] }
   ],
   "ranked_count": 1,
   "top_limit": 10

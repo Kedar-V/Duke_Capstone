@@ -28,6 +28,8 @@ The platform supports the student project-selection flow end to end:
 - **Cart/shortlist:** lets students save projects before ranking
 - **Rankings:** supports prioritizing and submitting a top-10 project list
 - **Teammate choices:** supports preferred / avoid teammate selections with encrypted persistence
+- **Cohorts:** projects can be scoped to a cohort (e.g., MIDS 2026)
+- **Admin management:** admin users can create cohorts, users, and projects
 - **Navigation UX:** burger menu across main pages and logo-based navigation back to Projects
 
 ## Tech stack
@@ -95,6 +97,7 @@ This repo also contains future-state / deployment-oriented design documents:
 - `HLD.md`: expanded cloud-oriented Mermaid HLD
 - `aws_architecture.md`: AWS architecture sketch
 - `flow.md`: supporting flow/design notes
+- `assignment_policy.md`: detailed policy for group/project assignment and governance
 
 These documents describe a more scalable deployment target than the current local/dev setup.
 
@@ -106,6 +109,7 @@ These documents describe a more scalable deployment target than the current loca
 ├── HLD.md                        # Higher-level architecture diagram (target-state oriented)
 ├── aws_architecture.md           # AWS deployment sketch
 ├── flow.md                       # Additional design flow notes
+├── assignment_policy.md          # Detailed assignment and grouping policy
 ├── schema.sql                    # Canonical PostgreSQL schema for current app
 ├── cleanup.sql                   # Utility SQL for ranking/cart cleanup and migration support
 ├── seed.sql                      # Older dev seed artifact (see note below)
@@ -163,10 +167,12 @@ Key endpoint groups:
 - **Auth:** `/api/auth/register`, `/api/auth/login`, `/api/auth/me`
 - **Projects:** `/api/projects`, `/api/projects/{project_id}`
 - **Search/filter/stats:** `/api/search/projects`, `/api/filters`, `/api/stats`
+- **Cohorts:** `/api/cohorts`
 - **Cart:** `/api/cart`, `/api/cart/items`, `/api/cart/items/{project_id}`
 - **Ratings:** `/api/ratings`
 - **Rankings:** `/api/rankings`
 - **Teammate choices:** `/api/teammate-choices`
+- **Admin (role=admin):** `/api/admin/users`, `/api/admin/projects`, `/api/admin/cohorts`
 
 For detailed request/response payloads, see `ApiContracts.md`.
 
@@ -208,8 +214,16 @@ Initialize the schema before starting the app:
 psql "$DATABASE_URL" -f schema.sql
 ```
 
+If using Alembic migrations:
+
+```bash
+cd backend
+alembic -c alembic.ini upgrade head
+```
+
 Optional utilities:
 - Load students from CSV using `backend/scripts/load_students_from_csv.py`
+- Import projects from CSV using `backend/scripts/import_projects_from_csv.py`
 - Run `cleanup.sql` only if you are intentionally applying its maintenance logic
 
 To load student data:
@@ -217,6 +231,13 @@ To load student data:
 ```bash
 cd backend
 python scripts/load_students_from_csv.py
+```
+
+To import projects from CSV:
+
+```bash
+cd backend
+python scripts/import_projects_from_csv.py
 ```
 
 ## Running with Docker Compose
