@@ -9,6 +9,7 @@ export default function RankingsPage() {
   const [additionalSelections, setAdditionalSelections] = useState([])
   const [topTen, setTopTen] = useState([])
   const [dragItem, setDragItem] = useState(null)
+  const [topDropIndex, setTopDropIndex] = useState(null)
   const [dragEnabled, setDragEnabled] = useState(true)
   const [topTenHidden, setTopTenHidden] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -131,12 +132,18 @@ export default function RankingsPage() {
     }
   }
 
-  function onDragStart(listName, index) {
+  function onDragStart(event, listName, index) {
     if (!dragEnabled) return
+    if (event?.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', `${listName}:${index}`)
+    }
     setDragItem({ listName, index })
   }
 
-  function onDrop(listName, index) {
+  function onDrop(event, listName, index) {
+    event.preventDefault()
+    event.stopPropagation()
     if (!dragItem) return
 
     if (listName === 'top' && dragItem.listName === 'additional' && topTen.length >= 10) {
@@ -146,6 +153,16 @@ export default function RankingsPage() {
     }
 
     if (dragItem.listName === listName) {
+      if (listName === 'top' && typeof index === 'number' && index !== dragItem.index) {
+        const nextTop = [...topTen]
+        const temp = nextTop[dragItem.index]
+        nextTop[dragItem.index] = nextTop[index]
+        nextTop[index] = temp
+        setTopTen(nextTop)
+        setDragItem(null)
+        return
+      }
+
       const list = listName === 'top' ? [...topTen] : [...additionalSelections]
       const [moved] = list.splice(dragItem.index, 1)
       const insertIndex = index ?? list.length
@@ -156,6 +173,7 @@ export default function RankingsPage() {
         setAdditionalSelections(list)
       }
       setDragItem(null)
+      setTopDropIndex(null)
       return
     }
 
@@ -178,6 +196,7 @@ export default function RankingsPage() {
     }
 
     setDragItem(null)
+    setTopDropIndex(null)
   }
 
   async function removeFromAdditional(index) {
@@ -288,14 +307,18 @@ export default function RankingsPage() {
             {additionalSelections.map((item, index) => (
               <div
                 key={item.id}
-                className={`card p-4 transition-transform duration-150 hover:-translate-y-0.5 ${dragEnabled ? 'cursor-grab' : ''}`}
+                className={`card p-4 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 role="button"
                 tabIndex={0}
                 aria-disabled="false"
                 draggable={dragEnabled}
-                onDragStart={() => onDragStart('additional', index)}
+                onDragStart={(event) => onDragStart(event, 'additional', index)}
+                onDragEnd={() => {
+                  setDragItem(null)
+                  setTopDropIndex(null)
+                }}
                 onDragOver={(event) => event.preventDefault()}
-                onDrop={() => onDrop('additional', index)}
+                onDrop={(event) => onDrop(event, 'additional', index)}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -365,22 +388,40 @@ export default function RankingsPage() {
               </button>
             </div>
           </div>
+          {dragItem ? (
+            <div className="mt-2 text-xs text-duke-700">
+              Drop on a ranked card to swap positions, or drop in empty space to place at the end.
+            </div>
+          ) : null}
           <div
             className="mt-3 flex items-center gap-3 overflow-x-auto pb-2"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={() => onDrop('top', undefined)}
+            onDragOver={(event) => {
+              event.preventDefault()
+              if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+              setTopDropIndex(null)
+            }}
+            onDrop={(event) => onDrop(event, 'top', undefined)}
           >
             {topTen.map((item, index) => (
               <div
                 key={item.id}
-                className={`w-[220px] shrink-0 rounded-xl bg-white border border-slate-200 p-3 transition-transform duration-150 hover:-translate-y-0.5 ${dragEnabled ? 'cursor-grab' : ''}`}
+                className={`w-[220px] shrink-0 rounded-xl bg-white border border-slate-200 p-3 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : ''} ${topDropIndex === index ? 'ring-2 ring-duke-500 border-duke-500 bg-duke-50/30' : ''}`}
                 role="button"
                 tabIndex={0}
                 aria-disabled="false"
                 draggable={dragEnabled}
-                onDragStart={() => onDragStart('top', index)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => onDrop('top', index)}
+                onDragStart={(event) => onDragStart(event, 'top', index)}
+                onDragEnd={() => {
+                  setDragItem(null)
+                  setTopDropIndex(null)
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+                  setTopDropIndex(index)
+                }}
+                onDrop={(event) => onDrop(event, 'top', index)}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
