@@ -302,7 +302,7 @@ export default function RankingsPage() {
 
         <div className="card p-6 ">
           <div className="text-duke-900 font-semibold">Additional selections (not ranked yet)</div>
-          <div className="muted mt-1">Drag into the top bar to include in your top 10.</div>
+          <div className="muted mt-1">Drag into the bottom bar to include in your top 10.</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             {additionalSelections.map((item, index) => (
               <div
@@ -388,11 +388,9 @@ export default function RankingsPage() {
               </button>
             </div>
           </div>
-          {dragItem ? (
-            <div className="mt-2 text-xs text-duke-700">
-              Drop on a ranked card to swap positions, or drop in empty space to place at the end.
-            </div>
-          ) : null}
+          <div className="mt-2 text-xs text-duke-700">
+            Drop on a ranked card to swap positions, or drop in empty space to place at the end.
+          </div>
           <div
             className="mt-3 flex items-center gap-3 overflow-x-auto pb-2"
             onDragOver={(event) => {
