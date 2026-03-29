@@ -50,6 +50,9 @@ class ProjectOut(BaseModel):
 
     avg_rating: Optional[float] = None
     ratings_count: int = 0
+    project_status: str = "published"
+    published_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
 
     created_at: datetime
 
@@ -81,6 +84,9 @@ class ProjectDetailOut(BaseModel):
     technical_domains: List[str] = Field(default_factory=list)
     supplementary_documents: List[str] = Field(default_factory=list)
     video_links: List[str] = Field(default_factory=list)
+    project_status: str = "published"
+    published_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
 
     created_at: datetime
     updated_at: datetime
@@ -195,6 +201,7 @@ class ProjectCardOut(BaseModel):
     title: str
     organization: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
+    project_status: str = "published"
 
 
 class RankingsOut(BaseModel):
@@ -296,6 +303,7 @@ class AdminProjectIn(BaseModel):
     technical_domains: List[str] = Field(default_factory=list)
     cover_image_url: Optional[str] = None
     cohort_id: Optional[int] = None
+    project_status: str = Field(default="draft", pattern="^(draft|published|archived)$")
 
 
 class AdminProjectOut(BaseModel):
@@ -312,6 +320,9 @@ class AdminProjectOut(BaseModel):
     technical_domains: List[str] = Field(default_factory=list)
     cover_image_url: Optional[str] = None
     cohort_id: Optional[int] = None
+    project_status: str = "draft"
+    published_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
 
 
 class CohortStudentUploadOut(BaseModel):
@@ -346,7 +357,7 @@ class AssignmentRuleConfigIn(BaseModel):
     name: str
     cohort_id: Optional[int] = None
     is_active: bool = False
-    team_size: int = Field(default=4, ge=2, le=8)
+    team_size: int = Field(default=4, ge=3, le=5)
     enforce_same_cohort: bool = True
     hard_avoid: bool = True
     max_low_preference_per_team: int = Field(default=1, ge=0, le=8)
@@ -362,7 +373,7 @@ class AssignmentRuleConfigUpdateIn(BaseModel):
     name: Optional[str] = None
     cohort_id: Optional[int] = None
     is_active: Optional[bool] = None
-    team_size: Optional[int] = Field(default=None, ge=2, le=8)
+    team_size: Optional[int] = Field(default=None, ge=3, le=5)
     enforce_same_cohort: Optional[bool] = None
     hard_avoid: Optional[bool] = None
     max_low_preference_per_team: Optional[int] = Field(default=None, ge=0, le=8)
@@ -401,6 +412,16 @@ class AssignmentPreviewStudentOut(BaseModel):
     display_name: Optional[str] = None
     assigned_score: int = 0
     assigned_rank: Optional[int] = None
+    is_preassigned: bool = False
+
+
+class AssignmentPreviewPreassignedIn(BaseModel):
+    user_id: int
+    project_id: int
+
+
+class AssignmentPreviewRequestIn(BaseModel):
+    preassigned: List[AssignmentPreviewPreassignedIn] = Field(default_factory=list)
 
 
 class AssignmentPreviewProjectOut(BaseModel):
@@ -448,6 +469,8 @@ class AssignmentPreviewOut(BaseModel):
     rule_config_id: int
     cohort_id: Optional[int] = None
     team_size: int
+    min_team_size: int = 3
+    max_team_size: int = 5
     total_students: int
     projects_considered: int
     projects_selected: int
@@ -457,6 +480,7 @@ class AssignmentPreviewOut(BaseModel):
     integrity: AssignmentPreviewIntegrityOut = Field(default_factory=AssignmentPreviewIntegrityOut)
     generated_at: datetime
     project_assignments: List[AssignmentPreviewProjectOut] = Field(default_factory=list)
+    unassigned_students: List[AssignmentPreviewStudentOut] = Field(default_factory=list)
 
 
 class AssignmentPreviewRunOut(BaseModel):
@@ -469,6 +493,22 @@ class AssignmentPreviewRunOut(BaseModel):
     quality: AssignmentPreviewQualityOut = Field(default_factory=AssignmentPreviewQualityOut)
     integrity: AssignmentPreviewIntegrityOut = Field(default_factory=AssignmentPreviewIntegrityOut)
     warnings: List[str] = Field(default_factory=list)
+
+
+class AssignmentSaveRequestIn(BaseModel):
+    preview: AssignmentPreviewOut
+    notes: Optional[str] = None
+
+
+class AssignmentSavedRunOut(BaseModel):
+    id: int
+    rule_config_id: int
+    cohort_id: Optional[int] = None
+    source_preview_run_id: Optional[int] = None
+    saved_by_user_id: int
+    input_fingerprint: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime
 
 
 class SubmittedRankingItemOut(BaseModel):

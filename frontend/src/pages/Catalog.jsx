@@ -168,7 +168,8 @@ function GooglePagination({ page, hasNext, loading, onPageChange, align = 'end' 
 }
 
 function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, isGuest = false, rankingsLocked = false }) {
-  const canAddToCart = !isGuest && !rankingsLocked && (inCart || rating > 0)
+  const isArchived = project.projectStatus === 'archived'
+  const canAddToCart = !isGuest && !isArchived && !rankingsLocked && (inCart || rating > 0)
   const headerMeta = project.cohort || (project.tags.length ? `${project.tags.length} tagged skills` : 'Open project')
   const metaChips = [
     project.domain ? `Focus: ${project.domain}` : null,
@@ -178,7 +179,11 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
 
   return (
     <div
-      className="project-card card cursor-pointer group"
+      className={
+        isArchived
+          ? 'project-card card cursor-pointer group opacity-70 bg-slate-50 border-slate-300'
+          : 'project-card card cursor-pointer group'
+      }
       role="button"
       tabIndex={0}
       onClick={onOpen}
@@ -196,6 +201,11 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
         </div>
 
         <div className="mt-3">
+          {isArchived ? (
+            <div className="mb-2 inline-flex items-center rounded-full border border-slate-300 bg-slate-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+              Archived
+            </div>
+          ) : null}
           <h3 className="project-card-title group-hover:text-duke-800 transition-colors">{project.title}</h3>
           <p className="project-card-description mt-2">{project.description}</p>
           <div className="mt-2 text-xs text-slate-500">
@@ -206,9 +216,9 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
         <div className="project-card-rating mt-4">
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Rate project match</div>
-            <div className={`text-xs font-bold px-2 py-0.5 rounded ${rating >= 7 ? 'bg-green-100 text-green-700' : rating >= 4 ? 'bg-amber-100 text-amber-700' : rating > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{isGuest ? 'Sign in' : `${rating || 0}/10`}</div>
+            <div className={`text-xs font-bold px-2 py-0.5 rounded ${isArchived ? 'bg-slate-200 text-slate-600' : rating >= 7 ? 'bg-green-100 text-green-700' : rating >= 4 ? 'bg-amber-100 text-amber-700' : rating > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{isGuest ? 'Sign in' : isArchived ? 'Archived' : `${rating || 0}/10`}</div>
           </div>
-          <Stars rating={rating} onRate={onRate} disabled={isGuest || rankingsLocked} />
+          <Stars rating={rating} onRate={onRate} disabled={isGuest || rankingsLocked || isArchived} />
         </div>
       </div>
 
@@ -253,6 +263,8 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
             title={
               isGuest
                 ? 'Sign in to select projects'
+                : isArchived
+                  ? 'Archived projects are not rankable'
                 : rankingsLocked
                   ? 'Ranking window is closed'
                 : !canAddToCart
@@ -264,6 +276,8 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
             className={
               isGuest
                 ? 'btn-secondary flex items-center gap-1.5'
+                : isArchived
+                  ? 'btn-secondary opacity-60 cursor-not-allowed flex items-center gap-1.5'
                 : rankingsLocked
                   ? 'btn-secondary opacity-60 cursor-not-allowed flex items-center gap-1.5'
                 : inCart
@@ -286,6 +300,11 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
                <>
                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                  Locked
+               </>
+            ) : isArchived ? (
+               <>
+                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+                 Archived
                </>
             ) : inCart ? (
                <>
@@ -376,6 +395,7 @@ export default function CatalogPage() {
       organizationLogoUrl: x.organization_logo_url ?? '',
       tags: Array.isArray(x.tags) ? x.tags : [],
       organization: x.organization ?? '—',
+      projectStatus: String(x.project_status || 'published').toLowerCase(),
       createdAt: x.created_at || null,
       publishedDateLabel: x.created_at ? new Date(x.created_at).toLocaleDateString() : 'Unknown',
     }))
@@ -503,6 +523,11 @@ export default function CatalogPage() {
       setActionMessage('Ranking window is closed. Project selection is disabled.')
       return
     }
+    const project = projects.find((item) => Number(item.id) === Number(projectId))
+    if (project?.projectStatus === 'archived') {
+      setActionMessage('Archived projects are visible but cannot be selected for ranking.')
+      return
+    }
     if (!inCart && getRatingValue(projectId) <= 0) {
       setActionMessage('Please rate a project before adding it to Selected Projects.')
       return
@@ -539,6 +564,11 @@ export default function CatalogPage() {
     }
     if (rankingsLocked) {
       setActionMessage('Ranking window is closed. Rating changes are disabled.')
+      return
+    }
+    const project = projects.find((item) => Number(item.id) === Number(projectId))
+    if (project?.projectStatus === 'archived') {
+      setActionMessage('Archived projects cannot be rated.')
       return
     }
     setRatings((prev) => ({ ...prev, [String(projectId)]: Number(value || 0) }))

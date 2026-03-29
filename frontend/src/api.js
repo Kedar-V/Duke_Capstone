@@ -363,10 +363,25 @@ export function adminActivateAssignmentRule(configId) {
   })
 }
 
-export function adminPreviewAssignmentRule(configId) {
+export function adminPreviewAssignmentRule(configId, payload = {}) {
   return request(`/api/admin/assignment-rules/${encodeURIComponent(configId)}/preview`, {
     method: 'POST',
+    body: JSON.stringify(payload),
   })
+}
+
+export function adminSaveAssignmentRun(configId, payload) {
+  return request(`/api/admin/assignment-rules/${encodeURIComponent(configId)}/save`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function adminListSavedAssignmentRuns(configId, { limit = 20 } = {}) {
+  const qs = new URLSearchParams()
+  if (limit) qs.set('limit', String(limit))
+  const suffix = qs.toString() ? `?${qs}` : ''
+  return request(`/api/admin/assignment-rules/${encodeURIComponent(configId)}/saved-runs${suffix}`)
 }
 
 export function adminListPartnerPreferences({ cohortId, includeComments = true } = {}) {

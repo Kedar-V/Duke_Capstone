@@ -45,6 +45,9 @@ from ..schemas import (
     AssignmentPreviewIntegrityOut,
     AssignmentPreviewRunOut,
     AssignmentPreviewProjectOut,
+    AssignmentPreviewRequestIn,
+    AssignmentSaveRequestIn,
+    AssignmentSavedRunOut,
     AssignmentPreviewStudentOut,
     AssignmentRuleConfigIn,
     AssignmentRuleConfigOut,
@@ -63,6 +66,16 @@ _company_schema_ready = False
 _rule_config_schema_ready = False
 _cohort_schema_ready = False
 _role_profile_schema_ready = False
+_project_status_schema_ready = False
+
+_PROJECT_STATUS_DRAFT = "draft"
+_PROJECT_STATUS_PUBLISHED = "published"
+_PROJECT_STATUS_ARCHIVED = "archived"
+_PROJECT_STATUSES = {
+    _PROJECT_STATUS_DRAFT,
+    _PROJECT_STATUS_PUBLISHED,
+    _PROJECT_STATUS_ARCHIVED,
+}
 
 
 def _project_cover_image_url(row: ClientIntakeForm) -> Optional[str]:
@@ -77,6 +90,56 @@ def _project_raw_with_cover_image(existing_raw: object, cover_image_url: Optiona
     base = dict(existing_raw) if isinstance(existing_raw, dict) else {}
     base["cover_image_url"] = (cover_image_url or "").strip() or None
     return base
+
+
+def _normalize_project_status(value: Optional[str]) -> str:
+    normalized = (value or _PROJECT_STATUS_DRAFT).strip().lower()
+    if normalized not in _PROJECT_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid project status")
+    return normalized
+
+
+def _ensure_project_status_schema(db: Session) -> None:
+    global _project_status_schema_ready
+    if _project_status_schema_ready:
+        return
+
+    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_status TEXT"))
+    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS published_at timestamptz"))
+    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at timestamptz"))
+    db.execute(
+        text(
+            """
+            UPDATE projects
+            SET project_status = 'published'
+            WHERE project_status IS NULL
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            UPDATE projects
+            SET project_status = 'published'
+            WHERE lower(trim(project_status)) NOT IN ('draft', 'published', 'archived')
+            """
+        )
+    )
+    db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET DEFAULT 'draft'"))
+    db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET NOT NULL"))
+    db.commit()
+    _project_status_schema_ready = True
+
+
+def _apply_project_status_transition(row: ClientIntakeForm, next_status: str) -> None:
+    next_status = _normalize_project_status(next_status)
+    previous_status = _normalize_project_status(getattr(row, "project_status", None))
+    row.project_status = next_status
+
+    if next_status == _PROJECT_STATUS_PUBLISHED and previous_status != _PROJECT_STATUS_PUBLISHED:
+        row.published_at = datetime.now(timezone.utc)
+    if next_status == _PROJECT_STATUS_ARCHIVED and previous_status != _PROJECT_STATUS_ARCHIVED:
+        row.archived_at = datetime.now(timezone.utc)
 
 
 def _ensure_company_schema(db: Session) -> None:
@@ -166,6 +229,24 @@ def _ensure_assignment_rule_schema(db: Session) -> None:
               quality_json JSONB NOT NULL DEFAULT '{}'::jsonb,
               integrity_json JSONB NOT NULL DEFAULT '{}'::jsonb,
               warnings_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+    )
+
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS assignment_saved_runs (
+              id BIGSERIAL PRIMARY KEY,
+              rule_config_id BIGINT NOT NULL REFERENCES assignment_rule_configs(id) ON DELETE CASCADE,
+              cohort_id BIGINT REFERENCES cohorts(id) ON DELETE SET NULL,
+              source_preview_run_id BIGINT REFERENCES assignment_preview_runs(id) ON DELETE SET NULL,
+              saved_by_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              input_fingerprint TEXT,
+              notes TEXT,
+              preview_json JSONB NOT NULL DEFAULT '{}'::jsonb,
               created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """
@@ -447,6 +528,30 @@ def _compute_preview_quality(
     )
 
 
+def _clamp_team_size(value: int, low: int = 3, high: int = 5) -> int:
+    return max(low, min(high, int(value)))
+
+
+def _partition_team_sizes(total: int, *, min_size: int, max_size: int, target_size: int) -> list[int]:
+    if total <= 0:
+        return []
+    if total <= max_size:
+        return [total]
+
+    min_teams = max(1, math.ceil(total / max_size))
+    max_teams = max(1, total // min_size)
+    if min_teams > max_teams:
+        return [max_size] * (total // max_size) + ([total % max_size] if total % max_size else [])
+
+    preferred_teams = int(round(total / max(target_size, 1)))
+    team_count = max(min_teams, min(max_teams, preferred_teams))
+
+    base = total // team_count
+    remainder = total % team_count
+    sizes = [base + 1 if idx < remainder else base for idx in range(team_count)]
+    return sizes
+
+
 def _build_integrity_report(
     *,
     total_students: int,
@@ -506,6 +611,7 @@ def _fingerprint_assignment_inputs(
     ranking_map: dict[int, dict[int, int]],
     wants: dict[int, set[int]],
     avoids: dict[int, set[int]],
+    preassigned: list[tuple[int, int]],
 ) -> str:
     payload = {
         "version": 1,
@@ -538,6 +644,7 @@ def _fingerprint_assignment_inputs(
             for uid, teammate_ids in avoids.items()
             for tid in teammate_ids
         ),
+        "preassigned_pairs": sorted((int(uid), int(pid)) for uid, pid in preassigned),
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -562,9 +669,31 @@ def _serialize_preview_run_row(row) -> AssignmentPreviewRunOut:
     )
 
 
-def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> AssignmentPreviewOut:
+def _serialize_saved_run_row(row) -> AssignmentSavedRunOut:
+    return AssignmentSavedRunOut(
+        id=row.id,
+        rule_config_id=row.rule_config_id,
+        cohort_id=row.cohort_id,
+        source_preview_run_id=row.source_preview_run_id,
+        saved_by_user_id=row.saved_by_user_id,
+        input_fingerprint=row.input_fingerprint,
+        notes=row.notes,
+        created_at=row.created_at,
+    )
+
+
+def _build_assignment_preview(
+    db: Session,
+    rule: AssignmentRuleConfig,
+    *,
+    preassigned: Optional[list[tuple[int, int]]] = None,
+) -> AssignmentPreviewOut:
+    _ensure_project_status_schema(db)
     cohort_id = rule.cohort_id
     warnings: list[str] = []
+    min_team_size = 3
+    max_team_size = 5
+    target_team_size = _clamp_team_size(rule.team_size, min_team_size, max_team_size)
 
     users_stmt = (
         select(User)
@@ -576,7 +705,11 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
         users_stmt = users_stmt.where(User.cohort_id == cohort_id)
     students = db.execute(users_stmt).scalars().all()
 
-    projects_stmt = select(ClientIntakeForm).where(ClientIntakeForm.deleted_at.is_(None))
+    projects_stmt = (
+        select(ClientIntakeForm)
+        .where(ClientIntakeForm.deleted_at.is_(None))
+        .where(func.lower(ClientIntakeForm.project_status) == _PROJECT_STATUS_PUBLISHED)
+    )
     if cohort_id is not None:
         projects_stmt = projects_stmt.where(ClientIntakeForm.cohort_id == cohort_id)
     projects_stmt = projects_stmt.order_by(ClientIntakeForm.project_id.asc())
@@ -606,7 +739,9 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
         return AssignmentPreviewOut(
             rule_config_id=rule.id,
             cohort_id=cohort_id,
-            team_size=rule.team_size,
+            team_size=target_team_size,
+            min_team_size=min_team_size,
+            max_team_size=max_team_size,
             total_students=len(students),
             projects_considered=len(projects),
             projects_selected=0,
@@ -616,6 +751,7 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
             integrity=integrity,
             generated_at=datetime.now(timezone.utc),
             project_assignments=[],
+            unassigned_students=[],
         )
 
     user_ids = [row.id for row in students]
@@ -658,7 +794,7 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
             if project_id in project_demand:
                 project_demand[project_id] += max(11 - rank, 0)
 
-    needed_projects = max(1, math.ceil(len(students) / max(rule.team_size, 1)))
+    needed_projects = max(1, math.ceil(len(students) / max(target_team_size, 1)))
     sorted_project_ids = sorted(
         project_demand.keys(),
         key=lambda pid: (project_demand.get(pid, 0), -pid),
@@ -668,10 +804,29 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
     if not selected_project_ids:
         selected_project_ids = [projects[0].project_id]
 
-    capacity_by_project = {pid: rule.team_size for pid in selected_project_ids}
+    normalized_preassigned: list[tuple[int, int]] = []
+    seen_preassigned_user_ids: set[int] = set()
+    available_user_ids = set(user_ids)
+    available_project_ids = set(project_by_id.keys())
+    for user_id, project_id in preassigned or []:
+        if user_id in seen_preassigned_user_ids:
+            warnings.append(f"Duplicate preassignment for user {user_id} ignored.")
+            continue
+        seen_preassigned_user_ids.add(user_id)
+        if user_id not in available_user_ids:
+            warnings.append(f"Preassignment user {user_id} is out of scope and was ignored.")
+            continue
+        if project_id not in available_project_ids:
+            warnings.append(f"Preassignment project {project_id} is out of scope and was ignored.")
+            continue
+        normalized_preassigned.append((user_id, project_id))
+        if project_id not in selected_project_ids:
+            selected_project_ids.append(project_id)
+
+    capacity_by_project = {pid: max_team_size for pid in selected_project_ids}
     while sum(capacity_by_project.values()) < len(students):
         best_project_id = max(selected_project_ids, key=lambda pid: project_demand.get(pid, 0))
-        capacity_by_project[best_project_id] += rule.team_size
+        capacity_by_project[best_project_id] += max_team_size
 
     student_email_to_user_id = {
         (row.email or "").strip().lower(): row.id
@@ -729,7 +884,20 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
     assigned_project_by_user: dict[int, int] = {}
     user_scores: dict[int, int] = {}
     user_assigned_rank: dict[int, int] = {}
+    preassigned_user_ids: set[int] = set()
     users_by_project: dict[int, list[int]] = {pid: [] for pid in selected_project_ids}
+
+    for user_id, project_id in normalized_preassigned:
+        users_by_project.setdefault(project_id, [])
+        if len(users_by_project[project_id]) >= capacity_by_project.get(project_id, max_team_size):
+            capacity_by_project[project_id] = capacity_by_project.get(project_id, max_team_size) + max_team_size
+        users_by_project[project_id].append(user_id)
+        assigned_project_by_user[user_id] = project_id
+        user_scores[user_id] = 9999
+        preassigned_user_ids.add(user_id)
+        rank = ranking_map.get(user_id, {}).get(project_id)
+        if rank is not None:
+            user_assigned_rank[user_id] = int(rank)
 
     ordered_students = sorted(
         students,
@@ -741,6 +909,8 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
 
     for student in ordered_students:
         uid = student.id
+        if uid in preassigned_user_ids:
+            continue
         best_project_id = None
         best_score = -10**9
         best_rank = None
@@ -792,8 +962,15 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
         project = project_by_id[project_id]
         member_user_ids = users_by_project[project_id]
         teams: list[list[AssignmentPreviewStudentOut]] = []
-        for idx in range(0, len(member_user_ids), rule.team_size):
-            chunk = member_user_ids[idx : idx + rule.team_size]
+        start = 0
+        for chunk_size in _partition_team_sizes(
+            len(member_user_ids),
+            min_size=min_team_size,
+            max_size=max_team_size,
+            target_size=target_team_size,
+        ):
+            chunk = member_user_ids[start : start + chunk_size]
+            start += chunk_size
             teams.append(
                 [
                     AssignmentPreviewStudentOut(
@@ -802,6 +979,7 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
                         display_name=user_by_id[uid].display_name,
                         assigned_score=user_scores.get(uid, 0),
                         assigned_rank=user_assigned_rank.get(uid),
+                        is_preassigned=uid in preassigned_user_ids,
                     )
                     for uid in chunk
                 ]
@@ -842,13 +1020,16 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
         ranking_map=ranking_map,
         wants=wants,
         avoids=avoids,
+        preassigned=normalized_preassigned,
     )
 
     return AssignmentPreviewOut(
         input_fingerprint=input_fingerprint,
         rule_config_id=rule.id,
         cohort_id=cohort_id,
-        team_size=rule.team_size,
+        team_size=target_team_size,
+    min_team_size=min_team_size,
+    max_team_size=max_team_size,
         total_students=len(students),
         projects_considered=len(projects),
         projects_selected=len(selected_project_ids),
@@ -858,6 +1039,18 @@ def _build_assignment_preview(db: Session, rule: AssignmentRuleConfig) -> Assign
         integrity=integrity,
         generated_at=datetime.now(timezone.utc),
         project_assignments=project_assignments,
+        unassigned_students=[
+            AssignmentPreviewStudentOut(
+                user_id=row.id,
+                email=row.email,
+                display_name=row.display_name,
+                assigned_score=0,
+                assigned_rank=None,
+                is_preassigned=False,
+            )
+            for row in students
+            if row.id not in assigned_project_by_user
+        ],
     )
 
 
@@ -1460,6 +1653,7 @@ def list_projects(
     _: User = Depends(require_admin),
 ):
     _ensure_company_schema(db)
+    _ensure_project_status_schema(db)
     stmt = select(ClientIntakeForm).where(ClientIntakeForm.deleted_at.is_(None))
     stmt = stmt.order_by(ClientIntakeForm.created_at.desc())
     if cohort_id:
@@ -1484,6 +1678,9 @@ def list_projects(
             technical_domains=row.technical_domains or [],
             cover_image_url=_project_cover_image_url(row),
             cohort_id=row.cohort_id,
+            project_status=_normalize_project_status(row.project_status),
+            published_at=row.published_at,
+            archived_at=row.archived_at,
         )
         for row in rows
     ]
@@ -1496,6 +1693,7 @@ def create_project(
     current_user: User = Depends(require_admin),
 ):
     _ensure_company_schema(db)
+    _ensure_project_status_schema(db)
     _cohort_or_404(db, payload.cohort_id)
     company = _company_or_404(db, payload.company_id)
     if not company:
@@ -1523,6 +1721,7 @@ def create_project(
         technical_domains=payload.technical_domains,
         cohort_id=payload.cohort_id,
     )
+    _apply_project_status_transition(row, payload.project_status)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -1536,7 +1735,12 @@ def create_project(
         action="create",
         target_type="project",
         target_id=str(row.project_id),
-        details={"company_name": company.name},
+        details={
+            "company_name": company.name,
+            "project_status": row.project_status,
+            "published_at": row.published_at.isoformat() if row.published_at else None,
+            "archived_at": row.archived_at.isoformat() if row.archived_at else None,
+        },
     )
     db.commit()
 
@@ -1554,6 +1758,9 @@ def create_project(
         technical_domains=row.technical_domains or [],
         cover_image_url=_project_cover_image_url(row),
         cohort_id=row.cohort_id,
+        project_status=_normalize_project_status(row.project_status),
+        published_at=row.published_at,
+        archived_at=row.archived_at,
     )
 
 
@@ -1565,6 +1772,7 @@ def update_project(
     current_user: User = Depends(require_admin),
 ):
     _ensure_company_schema(db)
+    _ensure_project_status_schema(db)
     row = (
         db.execute(select(ClientIntakeForm).where(ClientIntakeForm.project_id == project_id))
         .scalars()
@@ -1603,6 +1811,7 @@ def update_project(
     row.technical_domains = payload.technical_domains
     row.cohort_id = payload.cohort_id
     row.raw = _project_raw_with_cover_image(row.raw, payload.cover_image_url)
+    _apply_project_status_transition(row, payload.project_status)
 
     existing_link = (
         db.execute(select(ProjectCompany).where(ProjectCompany.project_id == row.project_id))
@@ -1623,7 +1832,12 @@ def update_project(
         action="update",
         target_type="project",
         target_id=str(row.project_id),
-        details={"company_name": company.name},
+        details={
+            "company_name": company.name,
+            "project_status": row.project_status,
+            "published_at": row.published_at.isoformat() if row.published_at else None,
+            "archived_at": row.archived_at.isoformat() if row.archived_at else None,
+        },
     )
     db.commit()
 
@@ -1641,6 +1855,9 @@ def update_project(
         technical_domains=row.technical_domains or [],
         cover_image_url=_project_cover_image_url(row),
         cohort_id=row.cohort_id,
+        project_status=_normalize_project_status(row.project_status),
+        published_at=row.published_at,
+        archived_at=row.archived_at,
     )
 
 
@@ -2043,12 +2260,17 @@ def activate_assignment_rule(
 @router.post("/assignment-rules/{config_id}/preview", response_model=AssignmentPreviewOut)
 def preview_assignment_rule(
     config_id: int,
+    payload: Optional[AssignmentPreviewRequestIn] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     _ensure_assignment_rule_schema(db)
     row = _rule_config_or_404(db, config_id)
-    preview = _build_assignment_preview(db, row)
+    preassigned = [
+        (item.user_id, item.project_id)
+        for item in (payload.preassigned if payload else [])
+    ]
+    preview = _build_assignment_preview(db, row, preassigned=preassigned)
 
     run_row = db.execute(
         text(
@@ -2101,6 +2323,7 @@ def preview_assignment_rule(
             "input_fingerprint": preview.input_fingerprint,
             "cohort_id": row.cohort_id,
             "team_size": row.team_size,
+            "preassigned_count": len(preassigned),
             "total_students": preview.total_students,
             "projects_selected": preview.projects_selected,
             "unassigned_count": preview.unassigned_count,
@@ -2173,6 +2396,114 @@ def get_assignment_preview_run(
     preview.run_id = int(row.id)
     preview.input_fingerprint = row.input_fingerprint
     return preview
+
+
+@router.post("/assignment-rules/{config_id}/save", response_model=AssignmentSavedRunOut)
+def save_assignment_run(
+    config_id: int,
+    payload: AssignmentSaveRequestIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    _ensure_assignment_rule_schema(db)
+    row = _rule_config_or_404(db, config_id)
+
+    preview = payload.preview
+    if int(preview.rule_config_id) != int(config_id):
+        raise HTTPException(status_code=400, detail="Preview rule_config_id does not match config")
+
+    run_row = db.execute(
+        text(
+            """
+            INSERT INTO assignment_saved_runs (
+              rule_config_id,
+              cohort_id,
+              source_preview_run_id,
+              saved_by_user_id,
+              input_fingerprint,
+              notes,
+              preview_json
+            )
+            VALUES (
+              :rule_config_id,
+              :cohort_id,
+              :source_preview_run_id,
+              :saved_by_user_id,
+              :input_fingerprint,
+              :notes,
+              CAST(:preview_json AS JSONB)
+            )
+            RETURNING
+              id,
+              rule_config_id,
+              cohort_id,
+              source_preview_run_id,
+              saved_by_user_id,
+              input_fingerprint,
+              notes,
+              created_at
+            """
+        ),
+        {
+            "rule_config_id": row.id,
+            "cohort_id": row.cohort_id,
+            "source_preview_run_id": preview.run_id,
+            "saved_by_user_id": current_user.id,
+            "input_fingerprint": preview.input_fingerprint,
+            "notes": (payload.notes or "").strip() or None,
+            "preview_json": preview.model_dump_json(),
+        },
+    ).first()
+
+    _log_admin_action(
+        db,
+        admin_user_id=current_user.id,
+        action="save",
+        target_type="assignment_rule_config",
+        target_id=str(row.id),
+        details={
+            "saved_run_id": int(run_row.id),
+            "source_preview_run_id": preview.run_id,
+            "input_fingerprint": preview.input_fingerprint,
+            "total_students": preview.total_students,
+            "projects_selected": preview.projects_selected,
+            "notes": (payload.notes or "").strip() or None,
+        },
+    )
+    db.commit()
+    return _serialize_saved_run_row(run_row)
+
+
+@router.get("/assignment-rules/{config_id}/saved-runs", response_model=List[AssignmentSavedRunOut])
+def list_saved_assignment_runs(
+    config_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    _ensure_assignment_rule_schema(db)
+    _rule_config_or_404(db, config_id)
+    rows = db.execute(
+        text(
+            """
+            SELECT
+              id,
+              rule_config_id,
+              cohort_id,
+              source_preview_run_id,
+              saved_by_user_id,
+              input_fingerprint,
+              notes,
+              created_at
+            FROM assignment_saved_runs
+            WHERE rule_config_id = :config_id
+            ORDER BY created_at DESC, id DESC
+            LIMIT :limit
+            """
+        ),
+        {"config_id": config_id, "limit": limit},
+    ).all()
+    return [_serialize_saved_run_row(saved) for saved in rows]
 
 
 @router.get("/rankings/submissions", response_model=List[AdminRankingSubmissionOut])

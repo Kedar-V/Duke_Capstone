@@ -157,6 +157,7 @@ export default function ProjectDisplayPage() {
   const inCart = useMemo(() => {
     return Boolean(cart?.project_ids?.includes(project?.id))
   }, [cart, project?.id])
+  const isArchived = String(project?.project_status || '').toLowerCase() === 'archived'
 
   async function handleToggleCart() {
     if (!project?.id) return
@@ -166,6 +167,10 @@ export default function ProjectDisplayPage() {
     }
     if (rankingsLocked) {
       setError('Ranking window is closed. Project selection is disabled.')
+      return
+    }
+    if (isArchived) {
+      setError('Archived projects are visible but cannot be selected for ranking.')
       return
     }
     if (!inCart && rating <= 0) {
@@ -186,6 +191,10 @@ export default function ProjectDisplayPage() {
     }
     if (rankingsLocked) {
       setError('Ranking window is closed. Rating changes are disabled.')
+      return
+    }
+    if (isArchived) {
+      setError('Archived projects cannot be rated.')
       return
     }
     setRating(value)
@@ -354,6 +363,11 @@ export default function ProjectDisplayPage() {
                     </div>
                     <div className="flex-1 min-w-0 pt-0.5">
                       <h1 className="text-2xl md:text-3xl font-heading text-duke-900 leading-tight">{headerTitle}</h1>
+                      {isArchived ? (
+                        <div className="mt-2 inline-flex items-center rounded-full border border-slate-300 bg-slate-200 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Archived
+                        </div>
+                      ) : null}
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2.5">
                         <span className="font-medium text-slate-700 flex items-center gap-1.5 hover:text-duke-800 transition-colors">
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
@@ -397,24 +411,28 @@ export default function ProjectDisplayPage() {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:p-5 space-y-4 xl:sticky xl:top-6">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Your Match Rating</div>
                   <div className="flex items-center justify-between gap-3">
-                    <Stars rating={rating} onRate={handleRate} disabled={!user || rankingsLocked} />
-                    <div className={`text-sm font-bold px-2 py-0.5 rounded ${rating >= 7 ? 'bg-green-100 text-green-700' : rating >= 4 ? 'bg-amber-100 text-amber-700' : rating > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
-                      {!user ? 'Sign in' : rankingsLocked ? 'Locked' : `${rating || 0}/10`}
+                    <Stars rating={rating} onRate={handleRate} disabled={!user || rankingsLocked || isArchived} />
+                    <div className={`text-sm font-bold px-2 py-0.5 rounded ${isArchived ? 'bg-slate-200 text-slate-600' : rating >= 7 ? 'bg-green-100 text-green-700' : rating >= 4 ? 'bg-amber-100 text-amber-700' : rating > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {!user ? 'Sign in' : isArchived ? 'Archived' : rankingsLocked ? 'Locked' : `${rating || 0}/10`}
                     </div>
                   </div>
                   {!user ? (
                     <div className="text-xs text-slate-500">Sign in to rate and select this project.</div>
+                  ) : isArchived ? (
+                    <div className="text-xs text-slate-500">Archived projects remain visible but are locked for rating and ranking.</div>
                   ) : rankingsLocked ? (
                     <div className="text-xs text-slate-500">Ranking window is closed. Rating and selection are locked.</div>
                   ) : null}
 
                   <button
                     type="button"
-                    disabled={rankingsLocked || (Boolean(user) && !inCart && rating <= 0)}
-                    title={!user ? 'Sign in to select projects' : rankingsLocked ? 'Ranking window is closed' : !inCart && rating <= 0 ? 'Rate this project first' : inCart ? 'Remove from selected projects' : 'Add to selected projects'}
+                    disabled={isArchived || rankingsLocked || (Boolean(user) && !inCart && rating <= 0)}
+                    title={!user ? 'Sign in to select projects' : isArchived ? 'Archived projects are not rankable' : rankingsLocked ? 'Ranking window is closed' : !inCart && rating <= 0 ? 'Rate this project first' : inCart ? 'Remove from selected projects' : 'Add to selected projects'}
                     className={
                       !user
                         ? 'btn-secondary h-[52px] w-full px-5 flex items-center justify-center gap-2 shadow-sm'
+                        : isArchived
+                          ? 'btn-secondary h-[52px] w-full px-5 opacity-60 cursor-not-allowed flex items-center justify-center gap-2'
                         : rankingsLocked
                           ? 'btn-secondary h-[52px] w-full px-5 opacity-60 cursor-not-allowed flex items-center justify-center gap-2'
                         : inCart
@@ -429,6 +447,11 @@ export default function ProjectDisplayPage() {
                        <>
                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v7h-7"/><path d="M3 10 14 21"/></svg>
                          Sign in to select
+                       </>
+                    ) : isArchived ? (
+                       <>
+                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+                         Archived
                        </>
                     ) : rankingsLocked ? (
                        <>

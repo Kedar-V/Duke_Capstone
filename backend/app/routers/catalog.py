@@ -54,6 +54,60 @@ logger = logging.getLogger(__name__)
 _rankings_submission_schema_ready = False
 _company_schema_ready = False
 _cohort_schema_ready = False
+_project_status_schema_ready = False
+
+_PROJECT_STATUS_DRAFT = "draft"
+_PROJECT_STATUS_PUBLISHED = "published"
+_PROJECT_STATUS_ARCHIVED = "archived"
+
+
+def _normalize_project_status(value: Optional[str]) -> str:
+    normalized = (value or _PROJECT_STATUS_PUBLISHED).strip().lower()
+    if normalized not in {_PROJECT_STATUS_DRAFT, _PROJECT_STATUS_PUBLISHED, _PROJECT_STATUS_ARCHIVED}:
+        return _PROJECT_STATUS_PUBLISHED
+    return normalized
+
+
+def _ensure_project_status_schema(db: Session) -> None:
+    global _project_status_schema_ready
+    if _project_status_schema_ready:
+        return
+
+    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_status TEXT"))
+    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS published_at timestamptz"))
+    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at timestamptz"))
+    db.execute(
+        text(
+            """
+            UPDATE projects
+            SET project_status = 'published'
+            WHERE project_status IS NULL
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            UPDATE projects
+            SET project_status = 'published'
+            WHERE lower(trim(project_status)) NOT IN ('draft', 'published', 'archived')
+            """
+        )
+    )
+    db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET DEFAULT 'draft'"))
+    db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET NOT NULL"))
+    db.commit()
+    _project_status_schema_ready = True
+
+
+def _catalog_visible_status_filter():
+    return func.lower(ClientIntakeForm.project_status).in_(
+        [_PROJECT_STATUS_PUBLISHED, _PROJECT_STATUS_ARCHIVED]
+    )
+
+
+def _rankable_status_filter():
+    return func.lower(ClientIntakeForm.project_status) == _PROJECT_STATUS_PUBLISHED
 
 
 def _ensure_rankings_submission_schema(db: Session) -> None:
@@ -281,6 +335,7 @@ def list_organizations(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     _ensure_company_schema(db)
+    _ensure_project_status_schema(db)
     if current_user and current_user.role == "student" and current_user.cohort_id:
         rows = db.execute(
             select(Company.name, Company.industry)
@@ -288,6 +343,7 @@ def list_organizations(
             .join(ClientIntakeForm, ClientIntakeForm.project_id == ProjectCompany.project_id)
             .where(
                 ClientIntakeForm.deleted_at.is_(None),
+                _catalog_visible_status_filter(),
                 ClientIntakeForm.cohort_id == current_user.cohort_id,
             )
             .distinct()
@@ -307,8 +363,10 @@ def list_domains(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
+    _ensure_project_status_schema(db)
     stmt = select(ClientIntakeForm.technical_domains).where(
-        ClientIntakeForm.deleted_at.is_(None)
+        ClientIntakeForm.deleted_at.is_(None),
+        _catalog_visible_status_filter(),
     )
     if current_user and current_user.role == "student" and current_user.cohort_id:
         stmt = stmt.where(ClientIntakeForm.cohort_id == current_user.cohort_id)
@@ -328,8 +386,10 @@ def list_skills(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
+    _ensure_project_status_schema(db)
     stmt = select(ClientIntakeForm.required_skills).where(
-        ClientIntakeForm.deleted_at.is_(None)
+        ClientIntakeForm.deleted_at.is_(None),
+        _catalog_visible_status_filter(),
     )
     if current_user and current_user.role == "student" and current_user.cohort_id:
         stmt = stmt.where(ClientIntakeForm.cohort_id == current_user.cohort_id)
@@ -408,13 +468,14 @@ def list_filters(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     _ensure_cohort_schema(db)
+    _ensure_project_status_schema(db)
     stmt = select(
         ClientIntakeForm.technical_domains,
         ClientIntakeForm.required_skills,
         Company.industry,
     ).join(ProjectCompany, ProjectCompany.project_id == ClientIntakeForm.project_id).join(
         Company, Company.id == ProjectCompany.company_id
-    ).where(ClientIntakeForm.deleted_at.is_(None))
+    ).where(ClientIntakeForm.deleted_at.is_(None), _catalog_visible_status_filter())
     if current_user and current_user.role == "student" and current_user.cohort_id:
         stmt = stmt.where(ClientIntakeForm.cohort_id == current_user.cohort_id)
         cohort_rows = [
@@ -477,11 +538,13 @@ def stats(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
+    _ensure_project_status_schema(db)
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
 
     stmt = select(func.count(ClientIntakeForm.project_id)).where(
-        ClientIntakeForm.deleted_at.is_(None)
+        ClientIntakeForm.deleted_at.is_(None),
+        _catalog_visible_status_filter(),
     )
     if current_user and current_user.role == "student" and current_user.cohort_id:
         stmt = stmt.where(ClientIntakeForm.cohort_id == current_user.cohort_id)
@@ -508,6 +571,7 @@ def list_projects(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     _ensure_cohort_schema(db)
+    _ensure_project_status_schema(db)
     cohort_rows = db.execute(select(Cohort)).scalars().all()
     cohort_map = {row.id: row.name for row in cohort_rows}
     cohort_id = None
@@ -520,6 +584,7 @@ def list_projects(
         db.execute(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_catalog_visible_status_filter())
             .order_by(ClientIntakeForm.created_at.desc())
         )
         .scalars()
@@ -595,6 +660,9 @@ def list_projects(
                 skills=skills,
                 avg_rating=None,
                 ratings_count=0,
+                project_status=_normalize_project_status(row.project_status),
+                published_at=row.published_at,
+                archived_at=row.archived_at,
                 created_at=row.created_at,
             )
         )
@@ -609,11 +677,13 @@ def get_project(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     _ensure_cohort_schema(db)
+    _ensure_project_status_schema(db)
     row = (
         db.execute(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.project_id == project_id)
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_catalog_visible_status_filter())
         )
         .scalars()
         .first()
@@ -668,6 +738,9 @@ def get_project(
         technical_domains=to_list(row.technical_domains),
         supplementary_documents=to_list(row.supplementary_documents),
         video_links=to_list(row.video_links),
+        project_status=_normalize_project_status(row.project_status),
+        published_at=row.published_at,
+        archived_at=row.archived_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -680,11 +753,13 @@ def get_project_by_slug(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     _ensure_cohort_schema(db)
+    _ensure_project_status_schema(db)
     row = (
         db.execute(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.slug == slug)
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_catalog_visible_status_filter())
         )
         .scalars()
         .first()
@@ -739,6 +814,9 @@ def get_project_by_slug(
         technical_domains=to_list(row.technical_domains),
         supplementary_documents=to_list(row.supplementary_documents),
         video_links=to_list(row.video_links),
+        project_status=_normalize_project_status(row.project_status),
+        published_at=row.published_at,
+        archived_at=row.archived_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -751,6 +829,7 @@ def search_projects(
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     _ensure_cohort_schema(db)
+    _ensure_project_status_schema(db)
     cohort_rows = db.execute(select(Cohort)).scalars().all()
     cohort_map = {row.id: row.name for row in cohort_rows}
     cohort_id = None
@@ -763,6 +842,7 @@ def search_projects(
         db.execute(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_catalog_visible_status_filter())
             .order_by(ClientIntakeForm.created_at.desc())
         )
         .scalars()
@@ -910,6 +990,9 @@ def search_projects(
                 skills=skills,
                 avg_rating=None,
                 ratings_count=0,
+                project_status=_normalize_project_status(row.project_status),
+                published_at=row.published_at,
+                archived_at=row.archived_at,
                 created_at=row.created_at,
             )
         )
@@ -953,6 +1036,7 @@ def _get_or_create_ranking(db: Session, user_id: int) -> Ranking:
 
 
 def _fetch_project_cards(db: Session, project_ids: list[int]) -> list[ProjectCardOut]:
+    _ensure_project_status_schema(db)
     if not project_ids:
         return []
 
@@ -961,6 +1045,7 @@ def _fetch_project_cards(db: Session, project_ids: list[int]) -> list[ProjectCar
             select(ClientIntakeForm)
             .where(ClientIntakeForm.project_id.in_(project_ids))
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_rankable_status_filter())
         )
         .scalars()
         .all()
@@ -978,6 +1063,7 @@ def _fetch_project_cards(db: Session, project_ids: list[int]) -> list[ProjectCar
                 title=row.project_title or row_org,
                 organization=row_org,
                 tags=skills,
+                project_status=_normalize_project_status(row.project_status),
             )
         )
 
@@ -993,11 +1079,13 @@ def add_to_cart(
     current_user: User = Depends(get_current_user),
 ):
     _enforce_submission_deadline(db, current_user)
+    _ensure_project_status_schema(db)
     project = (
         db.execute(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.project_id == payload.project_id)
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_rankable_status_filter())
         )
         .scalars()
         .first()
@@ -1080,6 +1168,7 @@ def remove_from_cart(
 def get_cart(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
+    _ensure_project_status_schema(db)
     user_id = current_user.id
     cart = (
         db.execute(
@@ -1101,6 +1190,7 @@ def get_cart(
             .join(ClientIntakeForm, ClientIntakeForm.project_id == CartItem.project_id)
             .where(CartItem.cart_id == cart.id)
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_rankable_status_filter())
         )
         .scalars()
         .all()
@@ -1280,6 +1370,7 @@ def save_rating(
     current_user: User = Depends(get_current_user),
 ):
     _enforce_submission_deadline(db, current_user)
+    _ensure_project_status_schema(db)
     if payload.rating < 1 or payload.rating > 10:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 10")
 
@@ -1288,6 +1379,7 @@ def save_rating(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.project_id == payload.project_id)
             .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_rankable_status_filter())
         )
         .scalars()
         .first()
@@ -1320,6 +1412,7 @@ def get_rankings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _ensure_project_status_schema(db)
     ranking = _get_or_create_ranking(db, current_user.id)
     editable_until = _effective_submission_deadline_utc(db, current_user)
     is_locked = _is_ranking_locked(db, current_user)
@@ -1387,6 +1480,7 @@ def save_rankings(
     current_user: User = Depends(get_current_user),
 ):
     _enforce_submission_deadline(db, current_user)
+    _ensure_project_status_schema(db)
 
     if len(payload.top_ten_ids) > 10:
         raise HTTPException(status_code=400, detail="Top 10 max")
@@ -1395,6 +1489,24 @@ def save_rankings(
         raise HTTPException(status_code=400, detail="Duplicate project")
 
     if payload.top_ten_ids:
+        valid_rankable_ids = set(
+            db.execute(
+                select(ClientIntakeForm.project_id).where(
+                    ClientIntakeForm.deleted_at.is_(None),
+                    _rankable_status_filter(),
+                    ClientIntakeForm.project_id.in_(payload.top_ten_ids),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        non_rankable_ids = [pid for pid in payload.top_ten_ids if pid not in valid_rankable_ids]
+        if non_rankable_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Only published projects can be ranked",
+            )
+
         rated_ids = set(
             db.execute(
                 select(Rating.project_id).where(
@@ -1429,6 +1541,7 @@ def submit_rankings(
     current_user: User = Depends(get_current_user),
 ):
     _enforce_submission_deadline(db, current_user)
+    _ensure_project_status_schema(db)
 
     ranking = _get_or_create_ranking(db, current_user.id)
     if ranking.is_submitted:
@@ -1463,6 +1576,18 @@ def submit_rankings(
         )
 
     effective_top_ids = [pid for pid in top_ids if pid in cart_ids]
+    valid_rankable_ids = set(
+        db.execute(
+            select(ClientIntakeForm.project_id).where(
+                ClientIntakeForm.deleted_at.is_(None),
+                _rankable_status_filter(),
+                ClientIntakeForm.project_id.in_(effective_top_ids),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    effective_top_ids = [pid for pid in effective_top_ids if pid in valid_rankable_ids]
     if len(effective_top_ids) != 10:
         raise HTTPException(status_code=400, detail="You must rank exactly 10 projects before submitting")
 

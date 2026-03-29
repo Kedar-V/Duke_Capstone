@@ -163,6 +163,9 @@ class Project(Base):
     updated_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    project_status = Column(Text, nullable=False, server_default="draft")
+    published_at = Column(DateTime(timezone=True))
+    archived_at = Column(DateTime(timezone=True))
     deleted_at = Column(DateTime(timezone=True))
 
 

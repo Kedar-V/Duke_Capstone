@@ -6,8 +6,10 @@ import {
   adminCreateAssignmentRule,
   adminGetActiveAssignmentRule,
   adminListAssignmentRules,
+  adminListSavedAssignmentRuns,
   adminListPartnerPreferences,
   adminPreviewAssignmentRule,
+  adminSaveAssignmentRun,
   adminCreateCompany,
   adminCreateCohort,
   adminCreateProject,
@@ -50,6 +52,30 @@ function toIsoOrNull(localValue) {
   const parsed = new Date(localValue)
   if (Number.isNaN(parsed.getTime())) return null
   return parsed.toISOString()
+}
+
+function partitionTeamSizes(total, minSize, maxSize, targetSize) {
+  if (!Number.isFinite(total) || total <= 0) return []
+  if (total <= maxSize) return [total]
+
+  const minTeams = Math.max(1, Math.ceil(total / maxSize))
+  const maxTeams = Math.max(1, Math.floor(total / minSize))
+  if (minTeams > maxTeams) {
+    const chunks = []
+    let remaining = total
+    while (remaining > 0) {
+      const size = Math.min(maxSize, remaining)
+      chunks.push(size)
+      remaining -= size
+    }
+    return chunks
+  }
+
+  const preferred = Math.round(total / Math.max(1, targetSize))
+  const teamCount = Math.max(minTeams, Math.min(maxTeams, preferred))
+  const base = Math.floor(total / teamCount)
+  const remainder = total % teamCount
+  return Array.from({ length: teamCount }, (_, idx) => (idx < remainder ? base + 1 : base))
 }
 
 function PartnerNetwork3D({ graph, onNodeSelect }) {
@@ -326,6 +352,12 @@ export default function AdminPage() {
   const [rulesLoading, setRulesLoading] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewResult, setPreviewResult] = useState(null)
+  const [savedAssignmentRuns, setSavedAssignmentRuns] = useState([])
+  const [savingAssignmentRun, setSavingAssignmentRun] = useState(false)
+  const [manualPreassignments, setManualPreassignments] = useState([])
+  const [manualStudentId, setManualStudentId] = useState('')
+  const [manualProjectId, setManualProjectId] = useState('')
+  const [dragStudentUserId, setDragStudentUserId] = useState(null)
   const [partnerPreferences, setPartnerPreferences] = useState([])
   const [partnerCohortId, setPartnerCohortId] = useState('')
   const [partnerIncludeComments, setPartnerIncludeComments] = useState(true)
@@ -373,6 +405,7 @@ export default function AdminPage() {
   const [projectDomains, setProjectDomains] = useState('')
   const [projectCohortId, setProjectCohortId] = useState('')
   const [projectCompanyId, setProjectCompanyId] = useState('')
+  const [projectStatus, setProjectStatus] = useState('draft')
   const [editingProjectId, setEditingProjectId] = useState(null)
 
   const [companyName, setCompanyName] = useState('')
@@ -936,6 +969,108 @@ export default function AdminPage() {
     })
   }, [assignmentRules])
 
+  const assignmentScopeCohortId = useMemo(() => {
+    const explicit = ruleFormCohortId || rulesCohortId
+    if (explicit) return Number(explicit)
+    return activeAssignmentRule?.cohort_id ?? null
+  }, [ruleFormCohortId, rulesCohortId, activeAssignmentRule])
+
+  const assignmentStudents = useMemo(() => {
+    return (users || [])
+      .filter((row) => row.role === 'student')
+      .filter((row) => {
+        if (!assignmentScopeCohortId) return true
+        return Number(row.cohort_id || 0) === Number(assignmentScopeCohortId)
+      })
+      .sort((a, b) => String(a.display_name || a.email || '').localeCompare(String(b.display_name || b.email || '')))
+  }, [users, assignmentScopeCohortId])
+
+  const assignmentProjects = useMemo(() => {
+    return (projects || [])
+      .filter((row) => String(row.project_status || '').toLowerCase() === 'published')
+      .filter((row) => {
+        if (!assignmentScopeCohortId) return true
+        return Number(row.cohort_id || 0) === Number(assignmentScopeCohortId)
+      })
+      .sort((a, b) => String(a.project_title || a.organization || '').localeCompare(String(b.project_title || b.organization || '')))
+  }, [projects, assignmentScopeCohortId])
+
+  useEffect(() => {
+    const allowedUsers = new Set(assignmentStudents.map((row) => Number(row.id)))
+    const allowedProjects = new Set(assignmentProjects.map((row) => Number(row.project_id)))
+    setManualPreassignments((prev) => prev.filter((row) => allowedUsers.has(Number(row.user_id)) && allowedProjects.has(Number(row.project_id))))
+  }, [assignmentStudents, assignmentProjects])
+
+  function addManualPreassignment() {
+    const userId = Number(manualStudentId)
+    const projectId = Number(manualProjectId)
+    if (!userId || !projectId) return
+
+    setManualPreassignments((prev) => {
+      const withoutUser = prev.filter((row) => Number(row.user_id) !== userId)
+      return [...withoutUser, { user_id: userId, project_id: projectId }]
+    })
+    setManualStudentId('')
+    setManualProjectId('')
+  }
+
+  function removeManualPreassignment(userId) {
+    setManualPreassignments((prev) => prev.filter((row) => Number(row.user_id) !== Number(userId)))
+  }
+
+  function movePreviewStudent(userId, targetProjectId) {
+    setPreviewResult((prev) => {
+      if (!prev || !Array.isArray(prev.project_assignments)) return prev
+      const minSize = Number(prev.min_team_size || 3)
+      const maxSize = Number(prev.max_team_size || 5)
+      const targetSize = Number(prev.team_size || 4)
+
+      const projectCopies = prev.project_assignments.map((project) => ({
+        ...project,
+        teams: Array.isArray(project.teams)
+          ? project.teams.map((team) => (Array.isArray(team) ? [...team] : []))
+          : [],
+      }))
+
+      let movingMember = null
+      for (const project of projectCopies) {
+        for (const team of project.teams) {
+          const idx = team.findIndex((member) => Number(member.user_id) === Number(userId))
+          if (idx >= 0) {
+            movingMember = team.splice(idx, 1)[0]
+            break
+          }
+        }
+        project.teams = project.teams.filter((team) => team.length > 0)
+        project.assigned_count = project.teams.reduce((acc, team) => acc + team.length, 0)
+        if (movingMember) break
+      }
+
+      if (!movingMember) return prev
+
+      const targetProject = projectCopies.find((project) => Number(project.project_id) === Number(targetProjectId))
+      if (!targetProject) return prev
+
+      const flatMembers = targetProject.teams.flat().concat([movingMember])
+      const nextTeamSizes = partitionTeamSizes(flatMembers.length, minSize, maxSize, targetSize)
+      const rebuiltTeams = []
+      let start = 0
+      for (const size of nextTeamSizes) {
+        rebuiltTeams.push(flatMembers.slice(start, start + size))
+        start += size
+      }
+
+      targetProject.teams = rebuiltTeams
+      targetProject.assigned_count = flatMembers.length
+
+      return {
+        ...prev,
+        project_assignments: projectCopies,
+        unassigned_count: Math.max(0, Number(prev.total_students || 0) - projectCopies.reduce((acc, p) => acc + Number(p.assigned_count || 0), 0)),
+      }
+    })
+  }
+
   function navigateSection(label) {
     setMenuOpen(false)
     setAccountOpen(false)
@@ -1072,6 +1207,19 @@ export default function AdminPage() {
     }
   }
 
+  async function refreshSavedAssignmentRuns(configId) {
+    if (!configId) {
+      setSavedAssignmentRuns([])
+      return
+    }
+    try {
+      const rows = await adminListSavedAssignmentRuns(configId, { limit: 20 })
+      setSavedAssignmentRuns(rows || [])
+    } catch {
+      setSavedAssignmentRuns([])
+    }
+  }
+
   const cohortOptions = useMemo(() => {
     return [{ id: '', name: 'None' }, ...(cohorts || [])]
   }, [cohorts])
@@ -1096,6 +1244,7 @@ export default function AdminPage() {
     )
     setProjectCohortId(project.cohort_id ? String(project.cohort_id) : '')
     setProjectCompanyId(project.company_id ? String(project.company_id) : '')
+    setProjectStatus(String(project.project_status || 'draft').toLowerCase())
   }
 
   function resetProjectForm() {
@@ -1112,6 +1261,7 @@ export default function AdminPage() {
     setProjectDomains('')
     setProjectCohortId('')
     setProjectCompanyId('')
+    setProjectStatus('draft')
   }
 
   function fillUserForm(item) {
@@ -1296,6 +1446,7 @@ export default function AdminPage() {
         ? projectDomains.split(',').map((s) => s.trim()).filter(Boolean)
         : [],
       cohort_id: projectCohortId ? Number(projectCohortId) : null,
+      project_status: projectStatus || 'draft',
     }
   }
 
@@ -1416,6 +1567,7 @@ export default function AdminPage() {
     setRulePenaltyAvoid(String(item.penalty_avoid ?? 100))
     setRuleNotes(item.notes || '')
     setRuleFormError('')
+    refreshSavedAssignmentRuns(item.id)
   }
 
   function openRuleExplainer(item) {
@@ -1608,8 +1760,8 @@ export default function AdminPage() {
     }
 
     if (!payload.name) return { error: 'Rule config name is required.' }
-    if (Number.isNaN(payload.team_size) || payload.team_size < 2 || payload.team_size > 8) {
-      return { error: 'Team size must be between 2 and 8.' }
+    if (Number.isNaN(payload.team_size) || payload.team_size < 3 || payload.team_size > 5) {
+      return { error: 'Team size must be between 3 and 5.' }
     }
     if (
       Number.isNaN(payload.max_low_preference_per_team) ||
@@ -1693,13 +1845,36 @@ export default function AdminPage() {
     resetFlash()
     setPreviewLoading(true)
     try {
-      const preview = await adminPreviewAssignmentRule(configId)
+      const preview = await adminPreviewAssignmentRule(configId, {
+        preassigned: manualPreassignments.map((row) => ({
+          user_id: Number(row.user_id),
+          project_id: Number(row.project_id),
+        })),
+      })
       setPreviewResult(preview)
+      await refreshSavedAssignmentRuns(configId)
       setSuccess('Assignment preview generated.')
     } catch (err) {
       setError(String(err?.message || 'Failed to generate assignment preview'))
     } finally {
       setPreviewLoading(false)
+    }
+  }
+
+  async function handleSaveAssignmentSnapshot() {
+    if (!previewResult?.rule_config_id) return
+    resetFlash()
+    setSavingAssignmentRun(true)
+    try {
+      await adminSaveAssignmentRun(previewResult.rule_config_id, {
+        preview: previewResult,
+      })
+      await refreshSavedAssignmentRuns(previewResult.rule_config_id)
+      setSuccess('Assignment snapshot saved with timestamp.')
+    } catch (err) {
+      setError(String(err?.message || 'Failed to save assignment snapshot'))
+    } finally {
+      setSavingAssignmentRun(false)
     }
   }
 
@@ -2123,6 +2298,25 @@ export default function AdminPage() {
               </div>
               {panelOpen.projectsList ? (
               <>
+              <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] text-slate-500">Total Projects</div>
+                  <div className="text-base font-semibold text-slate-800">{projects.length}</div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] text-slate-500">Published</div>
+                  <div className="text-base font-semibold text-slate-800">{projects.filter((p) => String(p.project_status || '').toLowerCase() === 'published').length}</div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] text-slate-500">Draft</div>
+                  <div className="text-base font-semibold text-slate-800">{projects.filter((p) => String(p.project_status || '').toLowerCase() === 'draft').length}</div>
+                </div>
+                <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] text-slate-500">Archived</div>
+                  <div className="text-base font-semibold text-slate-800">{projects.filter((p) => String(p.project_status || '').toLowerCase() === 'archived').length}</div>
+                </div>
+              </div>
+
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   className="input-base"
@@ -2153,7 +2347,18 @@ export default function AdminPage() {
                         <div className="text-sm font-semibold text-slate-800">
                           {project.project_title || project.organization}
                         </div>
-                        <div className="text-xs text-slate-500">{project.organization}</div>
+                        <div className="text-xs text-slate-500 flex items-center gap-2">
+                          <span>{project.organization}</span>
+                          <span className={
+                            String(project.project_status || '').toLowerCase() === 'published'
+                              ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                              : String(project.project_status || '').toLowerCase() === 'archived'
+                                ? 'rounded-full border border-slate-300 bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700'
+                                : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                          }>
+                            {String(project.project_status || 'draft')}
+                          </span>
+                        </div>
                       </button>
                       <button
                         type="button"
@@ -2271,6 +2476,14 @@ export default function AdminPage() {
                         {cohort.name}
                       </option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="label">Lifecycle status</div>
+                  <select className="select-base" value={projectStatus} onChange={(e) => setProjectStatus(e.target.value)}>
+                    <option value="draft">Draft (hidden from students)</option>
+                    <option value="published">Published (visible and rankable)</option>
+                    <option value="archived">Archived (visible, not rankable)</option>
                   </select>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2482,7 +2695,7 @@ export default function AdminPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
                         <div className="label">Team size</div>
-                        <input className="input-base" type="number" min="2" max="8" value={ruleTeamSize} onChange={(e) => setRuleTeamSize(e.target.value)} />
+                        <input className="input-base" type="number" min="3" max="5" value={ruleTeamSize} onChange={(e) => setRuleTeamSize(e.target.value)} />
                       </div>
                       <div>
                         <div className="label">Max low preference/team</div>
@@ -2563,6 +2776,16 @@ export default function AdminPage() {
                       Export teams CSV
                     </button>
                   ) : null}
+                  {previewResult ? (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleSaveAssignmentSnapshot}
+                      disabled={savingAssignmentRun}
+                    >
+                      {savingAssignmentRun ? 'Saving snapshot…' : 'Save snapshot'}
+                    </button>
+                  ) : null}
                   {editingRuleId ? (
                     <button
                       type="button"
@@ -2576,22 +2799,80 @@ export default function AdminPage() {
                 </div>
               </div>
 
+              <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Preassign Students To Projects</div>
+                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
+                  <select className="select-base" value={manualStudentId} onChange={(e) => setManualStudentId(e.target.value)}>
+                    <option value="">Select student</option>
+                    {assignmentStudents.map((row) => (
+                      <option key={row.id} value={row.id}>
+                        {row.display_name || row.email || `User ${row.id}`}
+                      </option>
+                    ))}
+                  </select>
+                  <select className="select-base" value={manualProjectId} onChange={(e) => setManualProjectId(e.target.value)}>
+                    <option value="">Select project</option>
+                    {assignmentProjects.map((row) => (
+                      <option key={row.project_id} value={row.project_id}>
+                        {row.project_title || row.organization || `Project ${row.project_id}`}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn-secondary" onClick={addManualPreassignment}>
+                    Add preassignment
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {manualPreassignments.map((row) => {
+                    const student = assignmentStudents.find((s) => Number(s.id) === Number(row.user_id))
+                    const project = assignmentProjects.find((p) => Number(p.project_id) === Number(row.project_id))
+                    return (
+                      <button
+                        key={`${row.user_id}-${row.project_id}`}
+                        type="button"
+                        className="rounded-full border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs text-amber-800"
+                        onClick={() => removeManualPreassignment(row.user_id)}
+                        title="Click to remove"
+                      >
+                        {(student?.display_name || student?.email || `User ${row.user_id}`)} {' -> '} {(project?.project_title || project?.organization || `Project ${row.project_id}`)}
+                      </button>
+                    )
+                  })}
+                  {manualPreassignments.length === 0 ? (
+                    <div className="text-xs text-slate-500">No manual preassignments yet.</div>
+                  ) : null}
+                </div>
+              </div>
+
               {!previewResult ? (
                 <div className="mt-3 text-sm text-slate-400">No preview generated yet.</div>
               ) : (
                 <div className="mt-4 space-y-4">
                   <div className="rounded-card border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
                     <div>Total students: {previewResult.total_students}</div>
-                    <div>Team size: {previewResult.team_size}</div>
+                    <div>Target team size: {previewResult.team_size}</div>
                     <div>Projects considered: {previewResult.projects_considered}</div>
                     <div>Projects selected: {previewResult.projects_selected}</div>
                     <div>Unassigned: {previewResult.unassigned_count}</div>
-                    <div>Config ID: {previewResult.rule_config_id}</div>
+                    <div>Team range: {previewResult.min_team_size || 3}-{previewResult.max_team_size || 5}</div>
                   </div>
 
                   {Array.isArray(previewResult.warnings) && previewResult.warnings.length > 0 ? (
                     <div className="rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                       {previewResult.warnings.join(' | ')}
+                    </div>
+                  ) : null}
+
+                  {Array.isArray(previewResult.unassigned_students) && previewResult.unassigned_students.length > 0 ? (
+                    <div className="rounded-card border border-red-200 bg-red-50 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-red-700">Unassigned Students</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {previewResult.unassigned_students.map((member) => (
+                          <span key={`unassigned-${member.user_id}`} className="rounded-full border border-red-300 bg-white px-2 py-1 text-xs text-red-700">
+                            {member.display_name || member.email || `User ${member.user_id}`}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
 
@@ -2634,34 +2915,118 @@ export default function AdminPage() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs text-slate-700">
+                    <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                      Preassigned: {(previewResult.project_assignments || []).reduce((acc, proj) => acc + (proj.teams || []).flat().filter((m) => m.is_preassigned).length, 0)}
+                    </div>
+                    <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                      Avg students / project: {(previewResult.projects_selected || 0) > 0 ? ((previewResult.total_students || 0) / previewResult.projects_selected).toFixed(1) : '0.0'}
+                    </div>
+                    <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                      Students with rank: {previewResult.quality?.assigned_with_rank ?? 0}
+                    </div>
+                    <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                      Move mode: drag any student bubble to another project/team
+                    </div>
+                  </div>
+
+                  {savedAssignmentRuns.length > 0 ? (
+                    <div className="rounded-card border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Saved Snapshots</div>
+                      <div className="mt-2 space-y-1.5 text-xs text-slate-700 max-h-32 overflow-auto">
+                        {savedAssignmentRuns.map((run) => (
+                          <div key={run.id} className="rounded border border-slate-200 bg-white px-2 py-1.5 flex items-center justify-between gap-2">
+                            <span>#{run.id} · {run.source_preview_run_id ? `Preview ${run.source_preview_run_id}` : 'Manual'} · {run.created_at ? new Date(run.created_at).toLocaleString() : 'Unknown time'}</span>
+                            <span className="text-slate-500">Rule {run.rule_config_id}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="max-h-[65vh] overflow-auto pr-1">
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                      {(previewResult.project_assignments || []).map((proj) => (
-                        <div key={proj.project_id} className="rounded-card border border-slate-200 bg-white p-3">
-                          <div className="text-sm font-semibold text-slate-800">{proj.project_title}</div>
-                          <div className="text-xs text-slate-500">{proj.organization || 'Unknown org'} · Assigned {proj.assigned_count}</div>
-                          <div className="mt-2 space-y-2">
-                            {(proj.teams || []).map((team, teamIdx) => (
-                              <div key={`${proj.project_id}-${teamIdx}`} className="rounded border border-slate-200 bg-slate-50 px-2 py-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="text-xs font-medium text-slate-700">Team {teamIdx + 1}</div>
+                      {(previewResult.project_assignments || []).map((proj) => {
+                        const flattenedMembers = (proj.teams || []).flat()
+                        const preassignedCount = flattenedMembers.filter((m) => m.is_preassigned).length
+                        const rankedCount = flattenedMembers.filter((m) => Number(m.assigned_rank || 0) > 0).length
+                        const averageRank = rankedCount > 0
+                          ? (flattenedMembers
+                            .filter((m) => Number(m.assigned_rank || 0) > 0)
+                            .reduce((acc, m) => acc + Number(m.assigned_rank), 0) / rankedCount).toFixed(2)
+                          : 'n/a'
+
+                        return (
+                          <div
+                            key={proj.project_id}
+                            className="rounded-card border border-slate-200 bg-white p-3"
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={(event) => {
+                              event.preventDefault()
+                              const userId = Number(event.dataTransfer.getData('text/plain') || dragStudentUserId)
+                              if (userId) movePreviewStudent(userId, proj.project_id)
+                              setDragStudentUserId(null)
+                            }}
+                          >
+                            <div className="text-sm font-semibold text-slate-800">{proj.project_title}</div>
+                            <div className="text-xs text-slate-500">{proj.organization || 'Unknown org'} · Assigned {proj.assigned_count}</div>
+
+                            <div className="mt-2 grid grid-cols-3 gap-1 text-[11px]">
+                              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Preassigned {preassignedCount}</div>
+                              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Ranked {rankedCount}</div>
+                              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Avg rank {averageRank}</div>
+                            </div>
+
+                            <div className="mt-2 space-y-2">
+                              {(proj.teams || []).map((team, teamIdx) => (
+                                <div
+                                  key={`${proj.project_id}-${teamIdx}`}
+                                  className="rounded border border-slate-200 bg-slate-50 px-2 py-2"
+                                  onDragOver={(event) => event.preventDefault()}
+                                  onDrop={(event) => {
+                                    event.preventDefault()
+                                    const userId = Number(event.dataTransfer.getData('text/plain') || dragStudentUserId)
+                                    if (userId) movePreviewStudent(userId, proj.project_id)
+                                    setDragStudentUserId(null)
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="text-xs font-medium text-slate-700">Team {teamIdx + 1}</div>
+                                    <div className="text-[11px] text-slate-500">{team.length} members</div>
+                                  </div>
+                                  <div className="mt-1 space-y-1">
+                                    {(team || []).map((member) => (
+                                      <div
+                                        key={`${proj.project_id}-${teamIdx}-${member.user_id}`}
+                                        className={
+                                          member.is_preassigned
+                                            ? 'text-xs rounded-full border border-amber-300 bg-amber-100 text-amber-900 px-2 py-1 cursor-grab'
+                                            : 'text-xs rounded-full border border-blue-200 bg-blue-50 text-blue-900 px-2 py-1 cursor-grab'
+                                        }
+                                        draggable
+                                        onDragStart={(event) => {
+                                          setDragStudentUserId(member.user_id)
+                                          event.dataTransfer.setData('text/plain', String(member.user_id))
+                                        }}
+                                        onDragEnd={() => setDragStudentUserId(null)}
+                                      >
+                                        {(member.display_name || member.email || `User ${member.user_id}`)}
+                                        <span className="text-slate-500"> · score {member.assigned_score}</span>
+                                        {member.assigned_rank ? (
+                                          <span className="text-slate-500"> · rank #{member.assigned_rank}</span>
+                                        ) : null}
+                                        {member.is_preassigned ? (
+                                          <span className="text-amber-700"> · preassigned</span>
+                                        ) : null}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="mt-1 space-y-1">
-                                  {(team || []).map((member) => (
-                                    <div key={`${proj.project_id}-${teamIdx}-${member.user_id}`} className="text-xs text-slate-600">
-                                      {(member.display_name || member.email || `User ${member.user_id}`)}
-                                      <span className="text-slate-400"> · score {member.assigned_score}</span>
-                                      {member.assigned_rank ? (
-                                        <span className="text-slate-400"> · rank #{member.assigned_rank}</span>
-                                      ) : null}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
