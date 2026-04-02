@@ -18,6 +18,7 @@ from ..models import (
     Company,
     Cohort,
     ProjectCompany,
+    ProjectComment,
     Rating,
     Ranking,
     RankingItem,
@@ -34,6 +35,8 @@ from ..schemas import (
     FilterOptionsOut,
     OrganizationOut,
     ProjectCardOut,
+    ProjectCommentIn,
+    ProjectCommentOut,
     ProjectDetailOut,
     ProjectOut,
     RankingsIn,
@@ -55,6 +58,7 @@ _rankings_submission_schema_ready = False
 _company_schema_ready = False
 _cohort_schema_ready = False
 _project_status_schema_ready = False
+_project_comment_schema_ready = False
 
 _PROJECT_STATUS_DRAFT = "draft"
 _PROJECT_STATUS_PUBLISHED = "published"
@@ -108,6 +112,32 @@ def _catalog_visible_status_filter():
 
 def _rankable_status_filter():
     return func.lower(ClientIntakeForm.project_status) == _PROJECT_STATUS_PUBLISHED
+
+
+def _ensure_project_comment_schema(db: Session) -> None:
+    global _project_comment_schema_ready
+    if _project_comment_schema_ready:
+        return
+
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS project_comments (
+              id BIGSERIAL PRIMARY KEY,
+              project_id BIGINT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+              user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              comment TEXT NOT NULL,
+              is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+              resolved_at TIMESTAMPTZ,
+              resolved_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+    )
+    db.commit()
+    _project_comment_schema_ready = True
 
 
 def _ensure_rankings_submission_schema(db: Session) -> None:
@@ -1614,3 +1644,110 @@ def submit_rankings(
     db.commit()
 
     return get_rankings(db=db, current_user=current_user)
+
+
+@router.post("/projects/{project_id}/comments", response_model=ProjectCommentOut)
+def submit_project_comment(
+    project_id: int,
+    payload: ProjectCommentIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_project_status_schema(db)
+    _ensure_project_comment_schema(db)
+
+    if (current_user.role or "student") != "student":
+        raise HTTPException(status_code=403, detail="Only students can submit project comments")
+
+    project = (
+        db.execute(
+            select(ClientIntakeForm)
+            .where(ClientIntakeForm.project_id == project_id)
+            .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_catalog_visible_status_filter())
+        )
+        .scalars()
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if current_user.cohort_id and project.cohort_id != current_user.cohort_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    comment_text = (payload.comment or "").strip()
+    if not comment_text:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+
+    row = ProjectComment(
+        project_id=project.project_id,
+        user_id=current_user.id,
+        comment=comment_text,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    return ProjectCommentOut(
+        id=row.id,
+        project_id=row.project_id,
+        user_id=row.user_id,
+        comment=row.comment,
+        is_resolved=bool(row.is_resolved),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get("/projects/{project_id}/comments/me", response_model=list[ProjectCommentOut])
+def list_my_project_comments(
+    project_id: int,
+    limit: int = Query(default=20, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ensure_project_status_schema(db)
+    _ensure_project_comment_schema(db)
+
+    if (current_user.role or "student") != "student":
+        return []
+
+    project = (
+        db.execute(
+            select(ClientIntakeForm)
+            .where(ClientIntakeForm.project_id == project_id)
+            .where(ClientIntakeForm.deleted_at.is_(None))
+            .where(_catalog_visible_status_filter())
+        )
+        .scalars()
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if current_user.cohort_id and project.cohort_id != current_user.cohort_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    rows = (
+        db.execute(
+            select(ProjectComment)
+            .where(ProjectComment.project_id == project.project_id)
+            .where(ProjectComment.user_id == current_user.id)
+            .order_by(ProjectComment.created_at.desc(), ProjectComment.id.desc())
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        ProjectCommentOut(
+            id=row.id,
+            project_id=row.project_id,
+            user_id=row.user_id,
+            comment=row.comment,
+            is_resolved=bool(row.is_resolved),
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+        for row in rows
+    ]

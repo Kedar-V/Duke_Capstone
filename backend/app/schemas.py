@@ -229,6 +229,43 @@ class RatingOut(BaseModel):
     rating: int
 
 
+class ProjectCommentIn(BaseModel):
+    comment: str = Field(min_length=1, max_length=2000)
+
+
+class ProjectCommentOut(BaseModel):
+    id: int
+    project_id: int
+    user_id: int
+    comment: str
+    is_resolved: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminProjectCommentOut(BaseModel):
+    id: int
+    project_id: int
+    project_title: Optional[str] = None
+    student_user_id: int
+    student_email: Optional[str] = None
+    student_display_name: Optional[str] = None
+    comment: str
+    is_resolved: bool = False
+    resolved_at: Optional[datetime] = None
+    resolved_by_user_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminProjectCommentUpdateIn(BaseModel):
+    is_resolved: bool
+
+
+class AdminProjectCommentCountOut(BaseModel):
+    unresolved_count: int
+
+
 class SearchProjectsIn(BaseModel):
     q: Optional[str] = None
     domains: List[str] = Field(default_factory=list)

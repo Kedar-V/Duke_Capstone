@@ -336,7 +336,7 @@ export default function PartnersPage() {
             <div>
               <h1 className="text-3xl font-heading text-duke-900">Partners</h1>
               <p className="muted mt-1">Set up to 5 people you want to work with and up to 5 you want to avoid.</p>
-              <p className="muted mt-1">Use the class list below and click Want or Avoid for each student.</p>
+              <p className="muted mt-1">Use the class list below and click Want or Avoid for each student. Both lists support optional comments.</p>
             </div>
             <div className="text-right">
               <div className="text-xs text-slate-500">Want {wantIds.length}/5</div>
@@ -455,7 +455,7 @@ export default function PartnersPage() {
                   <div className="text-sm text-slate-400">No students selected.</div>
                 ) : (
                   wantStudents.map((student) => (
-                    <div key={student.id} className="rounded-card border border-emerald-200 bg-emerald-50 p-3">
+                    <div key={student.id} className="rounded-card border border-emerald-200 bg-emerald-50 p-3 space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <img
@@ -479,6 +479,21 @@ export default function PartnersPage() {
                         >
                           Remove
                         </button>
+                      </div>
+                      <div>
+                        <div className="text-xs text-emerald-700 mb-1">Comment (optional)</div>
+                        <textarea
+                          className="input-base text-sm"
+                          rows={2}
+                          placeholder="Add context for your want preference"
+                          value={comments[student.id] || ''}
+                          onChange={(event) =>
+                            setComments((prev) => ({
+                              ...prev,
+                              [student.id]: event.target.value,
+                            }))
+                          }
+                        />
                       </div>
                     </div>
                   ))

@@ -22,6 +22,7 @@ from ..models import (
     Cohort,
     FacultyProfile,
     ProjectCompany,
+    ProjectComment,
     Rating,
     Ranking,
     RankingItem,
@@ -34,6 +35,9 @@ from ..schemas import (
     AdminCompanyOut,
     AdminPartnerChoiceOut,
     AdminPartnerPreferenceOut,
+    AdminProjectCommentCountOut,
+    AdminProjectCommentOut,
+    AdminProjectCommentUpdateIn,
     AdminRankingSubmissionOut,
     AdminProjectIn,
     AdminProjectOut,
@@ -67,6 +71,7 @@ _rule_config_schema_ready = False
 _cohort_schema_ready = False
 _role_profile_schema_ready = False
 _project_status_schema_ready = False
+_project_comment_schema_ready = False
 
 _PROJECT_STATUS_DRAFT = "draft"
 _PROJECT_STATUS_PUBLISHED = "published"
@@ -140,6 +145,32 @@ def _apply_project_status_transition(row: ClientIntakeForm, next_status: str) ->
         row.published_at = datetime.now(timezone.utc)
     if next_status == _PROJECT_STATUS_ARCHIVED and previous_status != _PROJECT_STATUS_ARCHIVED:
         row.archived_at = datetime.now(timezone.utc)
+
+
+def _ensure_project_comment_schema(db: Session) -> None:
+    global _project_comment_schema_ready
+    if _project_comment_schema_ready:
+        return
+
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS project_comments (
+              id BIGSERIAL PRIMARY KEY,
+              project_id BIGINT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+              user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              comment TEXT NOT NULL,
+              is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+              resolved_at TIMESTAMPTZ,
+              resolved_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+    )
+    db.commit()
+    _project_comment_schema_ready = True
 
 
 def _ensure_company_schema(db: Session) -> None:
@@ -2639,6 +2670,131 @@ def list_partner_preferences(
     db.commit()
 
     return out
+
+
+@router.get("/project-comments/unresolved-count", response_model=AdminProjectCommentCountOut)
+def get_unresolved_project_comment_count(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    _ensure_project_comment_schema(db)
+    count = db.execute(
+        select(func.count(ProjectComment.id)).where(ProjectComment.is_resolved.is_(False))
+    ).scalar_one()
+    return AdminProjectCommentCountOut(unresolved_count=int(count or 0))
+
+
+@router.get("/project-comments", response_model=List[AdminProjectCommentOut])
+def list_project_comments(
+    unresolved_only: bool = Query(default=False),
+    project_id: Optional[int] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    _ensure_project_comment_schema(db)
+
+    stmt = (
+        select(
+            ProjectComment,
+            ClientIntakeForm.project_title,
+            User.email,
+            User.display_name,
+        )
+        .join(ClientIntakeForm, ClientIntakeForm.project_id == ProjectComment.project_id)
+        .join(User, User.id == ProjectComment.user_id)
+        .where(ClientIntakeForm.deleted_at.is_(None))
+        .order_by(ProjectComment.created_at.desc(), ProjectComment.id.desc())
+        .limit(limit)
+    )
+    if unresolved_only:
+        stmt = stmt.where(ProjectComment.is_resolved.is_(False))
+    if project_id is not None:
+        stmt = stmt.where(ProjectComment.project_id == project_id)
+
+    rows = db.execute(stmt).all()
+    return [
+        AdminProjectCommentOut(
+            id=comment.id,
+            project_id=comment.project_id,
+            project_title=project_title,
+            student_user_id=comment.user_id,
+            student_email=email,
+            student_display_name=display_name,
+            comment=comment.comment,
+            is_resolved=bool(comment.is_resolved),
+            resolved_at=comment.resolved_at,
+            resolved_by_user_id=comment.resolved_by_user_id,
+            created_at=comment.created_at,
+            updated_at=comment.updated_at,
+        )
+        for comment, project_title, email, display_name in rows
+    ]
+
+
+@router.patch("/project-comments/{comment_id}", response_model=AdminProjectCommentOut)
+def update_project_comment_status(
+    comment_id: int,
+    payload: AdminProjectCommentUpdateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    _ensure_project_comment_schema(db)
+
+    row = db.execute(select(ProjectComment).where(ProjectComment.id == comment_id)).scalars().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Project comment not found")
+
+    row.is_resolved = bool(payload.is_resolved)
+    row.updated_at = func.now()
+    if row.is_resolved:
+        row.resolved_at = datetime.now(timezone.utc)
+        row.resolved_by_user_id = current_user.id
+    else:
+        row.resolved_at = None
+        row.resolved_by_user_id = None
+
+    db.commit()
+
+    project_row = db.execute(
+        select(ClientIntakeForm.project_title).where(ClientIntakeForm.project_id == row.project_id)
+    ).first()
+    user_row = db.execute(
+        select(User.email, User.display_name).where(User.id == row.user_id)
+    ).first()
+
+    _log_admin_action(
+        db,
+        admin_user_id=current_user.id,
+        action="update_status",
+        target_type="project_comment",
+        target_id=str(row.id),
+        details={
+            "project_id": row.project_id,
+            "is_resolved": bool(row.is_resolved),
+            "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+        },
+    )
+    db.commit()
+
+    project_title = project_row[0] if project_row else None
+    student_email = user_row[0] if user_row else None
+    student_display_name = user_row[1] if user_row else None
+
+    return AdminProjectCommentOut(
+        id=row.id,
+        project_id=row.project_id,
+        project_title=project_title,
+        student_user_id=row.user_id,
+        student_email=student_email,
+        student_display_name=student_display_name,
+        comment=row.comment,
+        is_resolved=bool(row.is_resolved),
+        resolved_at=row.resolved_at,
+        resolved_by_user_id=row.resolved_by_user_id,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 @router.get("/partners/preferences/export")

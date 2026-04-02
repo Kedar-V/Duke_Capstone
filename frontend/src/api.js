@@ -177,6 +177,20 @@ export function saveRating({ projectId, rating }) {
   })
 }
 
+export function submitProjectComment({ projectId, comment }) {
+  return request(`/api/projects/${encodeURIComponent(projectId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ comment }),
+  })
+}
+
+export function getMyProjectComments({ projectId, limit = 20 }) {
+  const qs = new URLSearchParams()
+  if (limit) qs.set('limit', String(limit))
+  const suffix = qs.toString() ? `?${qs}` : ''
+  return request(`/api/projects/${encodeURIComponent(projectId)}/comments/me${suffix}`)
+}
+
 export function adminListCohorts() {
   return request('/api/admin/cohorts')
 }
@@ -222,6 +236,26 @@ export function adminListRankingSubmissions({ cohortId, submittedOnly = true, in
 export function adminReopenRankingSubmission(userId) {
   return request(`/api/admin/rankings/${encodeURIComponent(userId)}/reopen`, {
     method: 'POST',
+  })
+}
+
+export function adminGetUnresolvedProjectCommentCount() {
+  return request('/api/admin/project-comments/unresolved-count')
+}
+
+export function adminListProjectComments({ unresolvedOnly = false, projectId, limit = 50 } = {}) {
+  const qs = new URLSearchParams()
+  qs.set('unresolved_only', unresolvedOnly ? 'true' : 'false')
+  if (projectId) qs.set('project_id', String(projectId))
+  if (limit) qs.set('limit', String(limit))
+  const suffix = qs.toString() ? `?${qs}` : ''
+  return request(`/api/admin/project-comments${suffix}`)
+}
+
+export function adminUpdateProjectCommentStatus(commentId, { isResolved }) {
+  return request(`/api/admin/project-comments/${encodeURIComponent(commentId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_resolved: Boolean(isResolved) }),
   })
 }
 

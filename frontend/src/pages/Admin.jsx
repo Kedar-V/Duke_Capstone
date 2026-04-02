@@ -20,7 +20,9 @@ import {
   adminUpdateUser,
   adminDeleteCohort,
   adminDeleteProject,
+  adminGetUnresolvedProjectCommentCount,
   adminExportPartnerPreferencesCsv,
+  adminListProjectComments,
   adminExportRankingSubmissionsCsv,
   adminListRankingSubmissions,
   adminReopenRankingSubmission,
@@ -31,6 +33,7 @@ import {
   adminListProjects,
   adminListUsers,
   adminUpdateAssignmentRule,
+  adminUpdateProjectCommentStatus,
   adminUpdateProject,
 } from '../api'
 import { clearAuth, getUser } from '../auth'
@@ -434,6 +437,14 @@ export default function AdminPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [commentBellOpen, setCommentBellOpen] = useState(false)
+  const [unresolvedCommentCount, setUnresolvedCommentCount] = useState(0)
+  const [recentProjectComments, setRecentProjectComments] = useState([])
+  const [selectedProjectComments, setSelectedProjectComments] = useState([])
+  const [selectedProjectCommentsLoading, setSelectedProjectCommentsLoading] = useState(false)
+  const [projectDetailOpen, setProjectDetailOpen] = useState(false)
+  const [projectDetailCommentsOpen, setProjectDetailCommentsOpen] = useState(false)
+  const [commentActionsLoading, setCommentActionsLoading] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
 
@@ -547,6 +558,18 @@ export default function AdminPage() {
     )
     return projectSortDir === 'asc' ? sorted : sorted.reverse()
   }, [projects, projectQuery, projectSortDir])
+
+  const selectedAdminProject = useMemo(() => {
+    if (!editingProjectId) return null
+    return (projects || []).find((row) => Number(row.project_id) === Number(editingProjectId)) || null
+  }, [projects, editingProjectId])
+
+  const selectedProjectCommentStats = useMemo(() => {
+    const total = selectedProjectComments.length
+    const resolved = selectedProjectComments.filter((row) => Boolean(row?.is_resolved)).length
+    const unresolved = Math.max(0, total - resolved)
+    return { total, resolved, unresolved }
+  }, [selectedProjectComments])
 
   const filteredCompanies = useMemo(() => {
     const query = companyQuery.trim().toLowerCase()
@@ -1074,6 +1097,7 @@ export default function AdminPage() {
   function navigateSection(label) {
     setMenuOpen(false)
     setAccountOpen(false)
+    setCommentBellOpen(false)
     if (label === 'Partners') navigate('/partners')
     if (label === 'Projects') navigate('/projects')
     if (label === 'Rankings') navigate('/rankings')
@@ -1082,6 +1106,7 @@ export default function AdminPage() {
 
   function onSignOut() {
     setAccountOpen(false)
+    setCommentBellOpen(false)
     clearAuth()
     navigate('/login', { replace: true })
   }
@@ -1147,8 +1172,54 @@ export default function AdminPage() {
         includeComments: partnerIncludeComments,
       })
       setPartnerPreferences(prefs)
+      await refreshProjectCommentNotifications()
     } catch (err) {
       setError(String(err?.message || 'Failed to load admin data'))
+    }
+  }
+
+  async function refreshProjectCommentNotifications() {
+    try {
+      const [countOut, recent] = await Promise.all([
+        adminGetUnresolvedProjectCommentCount(),
+        adminListProjectComments({ limit: 20 }),
+      ])
+      setUnresolvedCommentCount(Number(countOut?.unresolved_count || 0))
+      setRecentProjectComments(Array.isArray(recent) ? recent : [])
+    } catch {
+      setUnresolvedCommentCount(0)
+      setRecentProjectComments([])
+    }
+  }
+
+  async function refreshSelectedProjectComments(projectId = editingProjectId) {
+    if (!projectId) {
+      setSelectedProjectComments([])
+      return
+    }
+    setSelectedProjectCommentsLoading(true)
+    try {
+      const rows = await adminListProjectComments({ projectId: Number(projectId), limit: 100 })
+      setSelectedProjectComments(Array.isArray(rows) ? rows : [])
+    } catch {
+      setSelectedProjectComments([])
+    } finally {
+      setSelectedProjectCommentsLoading(false)
+    }
+  }
+
+  async function handleUpdateProjectComment(commentId, isResolved) {
+    if (!commentId) return
+    setCommentActionsLoading(true)
+    try {
+      await adminUpdateProjectCommentStatus(commentId, { isResolved })
+      await refreshProjectCommentNotifications()
+      await refreshSelectedProjectComments()
+      setSuccess(isResolved ? 'Comment marked resolved.' : 'Comment marked unresolved.')
+    } catch (err) {
+      setError(String(err?.message || 'Failed to update comment status'))
+    } finally {
+      setCommentActionsLoading(false)
     }
   }
 
@@ -1245,6 +1316,29 @@ export default function AdminPage() {
     setProjectCohortId(project.cohort_id ? String(project.cohort_id) : '')
     setProjectCompanyId(project.company_id ? String(project.company_id) : '')
     setProjectStatus(String(project.project_status || 'draft').toLowerCase())
+    setProjectDetailOpen(true)
+    setProjectDetailCommentsOpen(false)
+    refreshSelectedProjectComments(project.project_id || null)
+  }
+
+  function openCreateProjectDrawer() {
+    setEditingProjectId(null)
+    setProjectTitle('')
+    setProjectSlug('')
+    setProjectSlugTouched(false)
+    setProjectSummary('')
+    setProjectDescription('')
+    setProjectCoverImageUrl('')
+    setProjectContactName('')
+    setProjectContactEmail('')
+    setProjectSkills('')
+    setProjectDomains('')
+    setProjectCohortId('')
+    setProjectCompanyId('')
+    setProjectStatus('draft')
+    setSelectedProjectComments([])
+    setProjectDetailCommentsOpen(false)
+    setProjectDetailOpen(true)
   }
 
   function resetProjectForm() {
@@ -1262,6 +1356,9 @@ export default function AdminPage() {
     setProjectCohortId('')
     setProjectCompanyId('')
     setProjectStatus('draft')
+    setSelectedProjectComments([])
+    setProjectDetailOpen(false)
+    setProjectDetailCommentsOpen(false)
   }
 
   function fillUserForm(item) {
@@ -1456,7 +1553,8 @@ export default function AdminPage() {
     try {
       await adminCreateProject(projectPayload())
       setSuccess('Project created.')
-      refreshAll()
+      await refreshAll()
+      resetProjectForm()
     } catch (err) {
       setError(String(err?.message || 'Failed to create project'))
     }
@@ -1469,7 +1567,8 @@ export default function AdminPage() {
     try {
       await adminUpdateProject(editingProjectId, projectPayload())
       setSuccess('Project updated.')
-      refreshAll()
+      await refreshAll()
+      resetProjectForm()
     } catch (err) {
       setError(String(err?.message || 'Failed to update project'))
     }
@@ -2160,10 +2259,117 @@ export default function AdminPage() {
             <div className="relative">
               <button
                 type="button"
+                className="relative h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-700"
+                aria-label="Project comment notifications"
+                title="Project comment notifications"
+                onClick={() => {
+                  setCommentBellOpen((v) => !v)
+                  setAccountOpen(false)
+                }}
+              >
+                <svg
+                  aria-hidden="true"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="mx-auto h-5 w-5"
+                >
+                  <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                  <path d="M9 17a3 3 0 0 0 6 0" />
+                </svg>
+                {unresolvedCommentCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
+                    {unresolvedCommentCount > 99 ? '99+' : unresolvedCommentCount}
+                  </span>
+                ) : null}
+              </button>
+              {commentBellOpen ? (
+                <div className="absolute right-0 top-full mt-2 w-96 max-w-[92vw] rounded-card border border-slate-200 bg-white shadow-sm p-3 z-20">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">Student Project Comments</div>
+                      <div className="text-xs text-slate-500">
+                        {unresolvedCommentCount > 0
+                          ? `${unresolvedCommentCount} unresolved`
+                          : 'No unresolved comments'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      onClick={() => refreshProjectCommentNotifications()}
+                      disabled={commentActionsLoading}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                  <div className="mt-3 max-h-80 overflow-auto space-y-2">
+                    {recentProjectComments.length ? (
+                      recentProjectComments.map((item) => {
+                        const commentId = item?.id
+                        const isResolved = Boolean(item?.is_resolved)
+                        const created = item?.created_at ? new Date(item.created_at) : null
+                        const createdText = created && !Number.isNaN(created.getTime())
+                          ? created.toLocaleString()
+                          : 'Unknown time'
+                        return (
+                          <div key={commentId} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="text-xs text-slate-500">
+                                <span className="font-semibold text-slate-700">
+                                  {item?.student_display_name || item?.student_email || 'Student'}
+                                </span>
+                                {' on '}
+                                <span className="font-semibold text-slate-700">
+                                  {item?.project_title || `Project #${item?.project_id || ''}`}
+                                </span>
+                              </div>
+                              <span
+                                className={
+                                  isResolved
+                                    ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                                    : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                                }
+                              >
+                                {isResolved ? 'Resolved' : 'Unresolved'}
+                              </span>
+                            </div>
+                            <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item?.comment || ''}</div>
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <div className="text-[11px] text-slate-500">{createdText}</div>
+                              <button
+                                type="button"
+                                className="btn-secondary text-xs"
+                                disabled={commentActionsLoading}
+                                onClick={() => handleUpdateProjectComment(commentId, !isResolved)}
+                              >
+                                {isResolved ? 'Mark unresolved' : 'Mark resolved'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <div className="text-sm text-slate-500">No project comments yet.</div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="relative">
+              <button
+                type="button"
                 className="h-10 w-10 rounded-full bg-duke-900 text-white text-sm font-semibold"
                 aria-label="Account menu"
                 title="Account menu"
-                onClick={() => setAccountOpen((v) => !v)}
+                onClick={() => {
+                  setAccountOpen((v) => !v)
+                  setCommentBellOpen(false)
+                }}
               >
                 {!accountAvatarFailed ? (
                   <img
@@ -2380,139 +2586,287 @@ export default function AdminPage() {
 
             <div className="card p-6">
               <div className="flex items-center justify-between">
-                <div className="text-lg font-heading text-duke-900">
-                  {editingProjectId ? 'Edit project' : 'Create project'}
-                </div>
+                <div className="text-lg font-heading text-duke-900">Project Editor</div>
                 <button type="button" className="btn-secondary" onClick={() => togglePanel('projectsForm')}>
                   {panelOpen.projectsForm ? 'Collapse' : 'Expand'}
                 </button>
               </div>
               {panelOpen.projectsForm ? (
               <>
-              <div className="mt-3">
-                {editingProjectId ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={resetProjectForm}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                ) : (
+              <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-4 space-y-3">
+                <div className="text-sm text-slate-600">
+                  Create or edit projects in the slide panel. Choose a project from the list or open a new one.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className="btn-secondary"
-                    onClick={resetProjectForm}
+                    className="btn-primary"
+                    onClick={openCreateProjectDrawer}
                   >
                     New project
                   </button>
-                )}
-              </div>
-              <form className="mt-4 space-y-3" onSubmit={editingProjectId ? handleUpdateProject : handleCreateProject}>
-                <div>
-                  <div className="label">Company</div>
-                  <select className="select-base" value={projectCompanyId} onChange={(e) => setProjectCompanyId(e.target.value)} required>
-                    {companyOptions.map((company) => (
-                      <option key={company.id || 'none'} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <div className="label">Project title</div>
-                  <input className="input-base" value={projectTitle} onChange={(e) => setProjectTitle(e.target.value)} />
-                </div>
-                <div>
-                  <div className="label flex items-center justify-between">
-                    <span>Slug</span>
+                  {editingProjectId ? (
                     <button
                       type="button"
-                      className="text-xs text-slate-500 hover:text-slate-700"
-                      onClick={() => {
-                        setProjectSlugTouched(false)
-                        const base = projectTitle || selectedProjectCompanyName
-                        setProjectSlug(base ? slugify(base) : '')
-                      }}
+                      className="btn-secondary"
+                      onClick={() => setProjectDetailOpen(true)}
                     >
-                      Use project title
+                      Reopen selected project
                     </button>
-                  </div>
-                  <input
-                    className="input-base"
-                    value={projectSlug}
-                    onChange={(e) => {
-                      setProjectSlugTouched(true)
-                      setProjectSlug(e.target.value)
-                    }}
-                    placeholder="auto-generated from project title"
-                  />
+                  ) : null}
                 </div>
-                <div>
-                  <div className="label">Project summary</div>
-                  <input className="input-base" value={projectSummary} onChange={(e) => setProjectSummary(e.target.value)} />
-                </div>
-                <div>
-                  <div className="label">Project description</div>
-                  <textarea className="input-base h-24" value={projectDescription} onChange={(e) => setProjectDescription(e.target.value)} />
-                </div>
-                <div>
-                  <div className="label">Cover image URL</div>
-                  <input
-                    className="input-base"
-                    type="url"
-                    placeholder="https://example.com/project-cover.jpg"
-                    value={projectCoverImageUrl}
-                    onChange={(e) => setProjectCoverImageUrl(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <div className="label">Cohort</div>
-                  <select className="select-base" value={projectCohortId} onChange={(e) => setProjectCohortId(e.target.value)}>
-                    {cohortOptions.map((cohort) => (
-                      <option key={cohort.id || 'none'} value={cohort.id}>
-                        {cohort.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <div className="label">Lifecycle status</div>
-                  <select className="select-base" value={projectStatus} onChange={(e) => setProjectStatus(e.target.value)}>
-                    <option value="draft">Draft (hidden from students)</option>
-                    <option value="published">Published (visible and rankable)</option>
-                    <option value="archived">Archived (visible, not rankable)</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <div className="label">Contact name</div>
-                    <input className="input-base" value={projectContactName} onChange={(e) => setProjectContactName(e.target.value)} />
-                  </div>
-                  <div>
-                    <div className="label">Contact email</div>
-                    <input className="input-base" value={projectContactEmail} onChange={(e) => setProjectContactEmail(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <div className="label">Required skills (comma-separated)</div>
-                  <input className="input-base" value={projectSkills} onChange={(e) => setProjectSkills(e.target.value)} />
-                </div>
-                <div>
-                  <div className="label">Technical domains (comma-separated)</div>
-                  <input className="input-base" value={projectDomains} onChange={(e) => setProjectDomains(e.target.value)} />
-                </div>
-                <div className="sticky bottom-0 bg-white pt-3 border-t border-slate-100">
-                  <button type="submit" className="btn-primary w-full">
-                    {editingProjectId ? 'Update project' : 'Create project'}
-                  </button>
-                </div>
-              </form>
+              </div>
               </>
               ) : null}
             </div>
+
+            {projectDetailOpen ? (
+              <div className="fixed inset-0 z-40" aria-live="polite">
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-slate-900/30"
+                  aria-label="Close project details"
+                  onClick={() => setProjectDetailOpen(false)}
+                />
+                <aside className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-slate-200 bg-white shadow-2xl p-5 overflow-auto">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Project Editor</div>
+                      <div className="text-lg font-heading text-duke-900">
+                        {editingProjectId
+                          ? (selectedAdminProject?.project_title || selectedAdminProject?.organization || 'Project')
+                          : 'Create Project'}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                        <span>{editingProjectId ? (selectedAdminProject?.organization || 'No company') : 'New draft'}</span>
+                        {editingProjectId ? (
+                          <span
+                            className={
+                              String(selectedAdminProject?.project_status || '').toLowerCase() === 'published'
+                                ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                                : String(selectedAdminProject?.project_status || '').toLowerCase() === 'archived'
+                                  ? 'rounded-full border border-slate-300 bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700'
+                                  : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                            }
+                          >
+                            {String(selectedAdminProject?.project_status || 'draft')}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button type="button" className="btn-secondary" onClick={() => setProjectDetailOpen(false)}>
+                      Close
+                    </button>
+                  </div>
+
+                  <form className="mt-4 space-y-3" onSubmit={editingProjectId ? handleUpdateProject : handleCreateProject}>
+                    <div>
+                      <div className="label">Company</div>
+                      <select className="select-base" value={projectCompanyId} onChange={(e) => setProjectCompanyId(e.target.value)} required>
+                        {companyOptions.map((company) => (
+                          <option key={company.id || 'none'} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="label">Project title</div>
+                      <input className="input-base" value={projectTitle} onChange={(e) => setProjectTitle(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label flex items-center justify-between">
+                        <span>Slug</span>
+                        <button
+                          type="button"
+                          className="text-xs text-slate-500 hover:text-slate-700"
+                          onClick={() => {
+                            setProjectSlugTouched(false)
+                            const base = projectTitle || selectedProjectCompanyName
+                            setProjectSlug(base ? slugify(base) : '')
+                          }}
+                        >
+                          Use project title
+                        </button>
+                      </div>
+                      <input
+                        className="input-base"
+                        value={projectSlug}
+                        onChange={(e) => {
+                          setProjectSlugTouched(true)
+                          setProjectSlug(e.target.value)
+                        }}
+                        placeholder="auto-generated from project title"
+                      />
+                    </div>
+                    <div>
+                      <div className="label">Project summary</div>
+                      <input className="input-base" value={projectSummary} onChange={(e) => setProjectSummary(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label">Project description</div>
+                      <textarea className="input-base h-24" value={projectDescription} onChange={(e) => setProjectDescription(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label">Cover image URL</div>
+                      <input
+                        className="input-base"
+                        type="url"
+                        placeholder="https://example.com/project-cover.jpg"
+                        value={projectCoverImageUrl}
+                        onChange={(e) => setProjectCoverImageUrl(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <div className="label">Cohort</div>
+                      <select className="select-base" value={projectCohortId} onChange={(e) => setProjectCohortId(e.target.value)}>
+                        {cohortOptions.map((cohort) => (
+                          <option key={cohort.id || 'none'} value={cohort.id}>
+                            {cohort.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div className="label">Lifecycle status</div>
+                      <select className="select-base" value={projectStatus} onChange={(e) => setProjectStatus(e.target.value)}>
+                        <option value="draft">Draft (hidden from students)</option>
+                        <option value="published">Published (visible and rankable)</option>
+                        <option value="archived">Archived (visible, not rankable)</option>
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <div className="label">Contact name</div>
+                        <input className="input-base" value={projectContactName} onChange={(e) => setProjectContactName(e.target.value)} />
+                      </div>
+                      <div>
+                        <div className="label">Contact email</div>
+                        <input className="input-base" value={projectContactEmail} onChange={(e) => setProjectContactEmail(e.target.value)} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="label">Required skills (comma-separated)</div>
+                      <input className="input-base" value={projectSkills} onChange={(e) => setProjectSkills(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label">Technical domains (comma-separated)</div>
+                      <input className="input-base" value={projectDomains} onChange={(e) => setProjectDomains(e.target.value)} />
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button type="submit" className="btn-primary flex-1">
+                        {editingProjectId ? 'Update project' : 'Create project'}
+                      </button>
+                      <button type="button" className="btn-secondary" onClick={resetProjectForm}>
+                        Clear
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-[11px] text-slate-500">Total</div>
+                      <div className="text-base font-semibold text-slate-800">{selectedProjectCommentStats.total}</div>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-[11px] text-slate-500">Unresolved</div>
+                      <div className="text-base font-semibold text-amber-700">{selectedProjectCommentStats.unresolved}</div>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-[11px] text-slate-500">Resolved</div>
+                      <div className="text-base font-semibold text-emerald-700">{selectedProjectCommentStats.resolved}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">Comment Review</div>
+                        <div className="text-xs text-slate-500">Expand only when you need full detail.</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs"
+                          onClick={() => refreshSelectedProjectComments()}
+                          disabled={commentActionsLoading || selectedProjectCommentsLoading}
+                        >
+                          Refresh
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs"
+                          onClick={() => setProjectDetailCommentsOpen((v) => !v)}
+                        >
+                          {projectDetailCommentsOpen ? 'Hide details' : 'Show details'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {editingProjectId && projectDetailCommentsOpen ? (
+                      <div className="mt-3 max-h-96 overflow-auto space-y-2">
+                        {selectedProjectCommentsLoading ? (
+                          <div className="text-sm text-slate-500">Loading comments...</div>
+                        ) : selectedProjectComments.length ? (
+                          selectedProjectComments.map((item) => {
+                            const commentId = item?.id
+                            const isResolved = Boolean(item?.is_resolved)
+                            const created = item?.created_at ? new Date(item.created_at) : null
+                            const createdText = created && !Number.isNaN(created.getTime())
+                              ? created.toLocaleString()
+                              : 'Unknown time'
+                            return (
+                              <div key={commentId} className="rounded border border-slate-200 bg-white p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="text-xs text-slate-500">
+                                    <span className="font-semibold text-slate-700">
+                                      {item?.student_display_name || item?.student_email || 'Student'}
+                                    </span>
+                                    <span>{' · '}{createdText}</span>
+                                  </div>
+                                  <span
+                                    className={
+                                      isResolved
+                                        ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                                        : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                                    }
+                                  >
+                                    {isResolved ? 'Resolved' : 'Unresolved'}
+                                  </span>
+                                </div>
+                                <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item?.comment || ''}</div>
+                                <div className="mt-2 flex justify-end">
+                                  <button
+                                    type="button"
+                                    className="btn-secondary text-xs"
+                                    disabled={commentActionsLoading}
+                                    onClick={() => handleUpdateProjectComment(commentId, !isResolved)}
+                                  >
+                                    {isResolved ? 'Mark unresolved' : 'Mark resolved'}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })
+                        ) : (
+                          <div className="text-sm text-slate-500">No comments for this project yet.</div>
+                        )}
+                      </div>
+                    ) : null}
+                    {!editingProjectId ? (
+                      <div className="mt-3 text-xs text-slate-500">Save the project first to receive and review comments.</div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-semibold text-slate-800">Project Summary</div>
+                    <div className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">
+                      {selectedAdminProject?.project_summary || 'No summary provided.'}
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

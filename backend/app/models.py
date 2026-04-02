@@ -283,6 +283,35 @@ class Rating(Base):
     )
 
 
+class ProjectComment(Base):
+    __tablename__ = "project_comments"
+
+    id = Column(BigInteger, primary_key=True)
+    project_id = Column(
+        BigInteger,
+        ForeignKey("projects.project_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    comment = Column(Text, nullable=False)
+    is_resolved = Column(Boolean, nullable=False, server_default="false")
+    resolved_at = Column(DateTime(timezone=True))
+    resolved_by_user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="SET NULL"),
+    )
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 # Backward-compatible alias while older imports still use the legacy name.
 ClientIntakeForm = Project
 

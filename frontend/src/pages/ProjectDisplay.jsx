@@ -4,10 +4,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   addCartItem,
   getCart,
+  getMyProjectComments,
   getProjectBySlug,
   getRankings,
   getRatings,
   removeCartItem,
+  submitProjectComment,
   saveRating,
 } from '../api'
 import { clearAuth, getUser } from '../auth'
@@ -93,7 +95,12 @@ export default function ProjectDisplayPage() {
   const [cart, setCart] = useState({ selected: 0, limit: 10, project_ids: [] })
   const [rating, setRating] = useState(0)
   const [rankingsLocked, setRankingsLocked] = useState(false)
+  const [projectComment, setProjectComment] = useState('')
+  const [commentSaving, setCommentSaving] = useState(false)
+  const [myComments, setMyComments] = useState([])
+  const [commentDrawerOpen, setCommentDrawerOpen] = useState(false)
   const [error, setError] = useState('')
+  const [commentMessage, setCommentMessage] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
@@ -107,6 +114,7 @@ export default function ProjectDisplayPage() {
   function navigateSection(label) {
     setMenuOpen(false)
     setAccountOpen(false)
+    setCommentDrawerOpen(false)
     if (label === 'Partners') navigate('/partners')
     if (label === 'Projects') navigate('/projects')
     if (label === 'Rankings') navigate('/rankings')
@@ -126,20 +134,25 @@ export default function ProjectDisplayPage() {
         setProject(p)
 
         if (user) {
-          const [c, r, rankings] = await Promise.all([
+          const [c, r, rankings, mine] = await Promise.all([
             getCart(),
             getRatings(),
             getRankings().catch(() => null),
+            user.role === 'student'
+              ? getMyProjectComments({ projectId: p.id, limit: 20 }).catch(() => [])
+              : Promise.resolve([]),
           ])
           if (cancelled) return
           setCart(c)
           const found = (r || []).find((x) => x.project_id === p.id)
           setRating(found?.rating || 0)
           setRankingsLocked(Boolean(rankings?.is_locked))
+          setMyComments(Array.isArray(mine) ? mine : [])
         } else {
           setCart({ selected: 0, limit: 10, project_ids: [] })
           setRating(0)
           setRankingsLocked(false)
+          setMyComments([])
         }
       } catch (e) {
         if (!cancelled) setError(e?.message || 'Failed to load project')
@@ -202,13 +215,42 @@ export default function ProjectDisplayPage() {
     await saveRating({ projectId: project.id, rating: value })
   }
 
+  async function handleSubmitComment() {
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    const text = (projectComment || '').trim()
+    if (!text) {
+      setCommentMessage('Comment cannot be empty.')
+      return
+    }
+    if (!project?.id) return
+
+    setCommentSaving(true)
+    setCommentMessage('')
+    try {
+      await submitProjectComment({ projectId: project.id, comment: text })
+      const mine = await getMyProjectComments({ projectId: project.id, limit: 20 }).catch(() => [])
+      setProjectComment('')
+      setMyComments(Array.isArray(mine) ? mine : [])
+      setCommentMessage('Comment sent to admins. Only admins can view it.')
+    } catch (err) {
+      setCommentMessage(String(err?.message || 'Failed to submit comment'))
+    } finally {
+      setCommentSaving(false)
+    }
+  }
+
   function onOpenProfile() {
     setAccountOpen(false)
+    setCommentDrawerOpen(false)
     navigate('/profile')
   }
 
   function onSignOut() {
     setAccountOpen(false)
+    setCommentDrawerOpen(false)
     clearAuth()
     navigate('/login', { replace: true })
   }
@@ -335,6 +377,84 @@ export default function ProjectDisplayPage() {
                 ) : null}
               </div>
             </div>
+
+            {user?.role === 'student' && commentDrawerOpen ? (
+              <div className="fixed inset-0 z-40" aria-live="polite">
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-slate-900/30"
+                  aria-label="Close question drawer"
+                  onClick={() => setCommentDrawerOpen(false)}
+                />
+                <aside className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-slate-200 bg-white shadow-2xl p-5 overflow-auto">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Project Questions</div>
+                      <div className="text-lg font-heading text-duke-900">Ask Admin About This Project</div>
+                      <div className="text-xs text-slate-500 mt-1">Visible only to admins. Not visible to other students.</div>
+                    </div>
+                    <button type="button" className="btn-secondary" onClick={() => setCommentDrawerOpen(false)}>
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">New Question</div>
+                    <textarea
+                      className="input-base mt-2 h-24"
+                      value={projectComment}
+                      onChange={(event) => setProjectComment(event.target.value)}
+                      placeholder="Share questions, concerns, or clarifications about this project"
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary mt-2 w-full"
+                      onClick={handleSubmitComment}
+                      disabled={commentSaving}
+                    >
+                      {commentSaving ? 'Sending...' : 'Send Comment'}
+                    </button>
+                    {commentMessage ? (
+                      <div className="mt-2 text-xs text-slate-600">{commentMessage}</div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Your Previous Questions</div>
+                    <div className="mt-2 space-y-2 max-h-[55vh] overflow-auto">
+                      {myComments.length ? (
+                        myComments.map((item) => {
+                          const created = item?.created_at ? new Date(item.created_at) : null
+                          const createdText = created && !Number.isNaN(created.getTime())
+                            ? created.toLocaleString()
+                            : 'Unknown time'
+                          const resolved = Boolean(item?.is_resolved)
+                          return (
+                            <div key={item.id} className="rounded border border-slate-200 bg-white p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-[11px] text-slate-500">{createdText}</div>
+                                <span
+                                  className={
+                                    resolved
+                                      ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                                      : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                                  }
+                                >
+                                  {resolved ? 'Resolved' : 'Unresolved'}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">{item.comment}</div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="text-xs text-slate-500">You have not posted a question for this project yet.</div>
+                      )}
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -470,6 +590,20 @@ export default function ProjectDisplayPage() {
                        </>
                     )}
                   </button>
+
+                  {user?.role === 'student' ? (
+                    <button
+                      type="button"
+                      className="btn-secondary w-full"
+                      onClick={() => {
+                        setCommentMessage('')
+                        setCommentDrawerOpen(true)
+                      }}
+                    >
+                      Ask admin a question
+                      {myComments.length ? ` (${myComments.length})` : ''}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
