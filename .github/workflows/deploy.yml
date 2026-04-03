@@ -8,7 +8,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # - name: Log in to Docker Hub
       #   uses: docker/login-action@v2
@@ -83,8 +83,38 @@ jobs:
             fi
 
             cd /home/ec2-user/app
+            if [ ! -f ".env" ]; then
+              echo "Missing /home/ec2-user/app/.env on EC2"
+              exit 1
+            fi
+
+            set -a
+            . ./.env
+            set +a
+
+            if [ -z "$DATABASE_URL" ]; then
+              echo "DATABASE_URL is missing in EC2 .env"
+              exit 1
+            fi
+            if [ -z "$TEAMMATE_PREFS_KEY" ]; then
+              echo "TEAMMATE_PREFS_KEY is missing in EC2 .env"
+              exit 1
+            fi
+            RUN_DB_SEEDS=${RUN_DB_SEEDS:-false}
+
+            # Use compose build first so migration job runs against the same image dependencies.
             docker-compose down
             docker-compose build
+
+            # Apply schema changes to RDS before launching refreshed API/frontend containers.
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
+
+            # Optional one-time seed load against RDS (set RUN_DB_SEEDS=true in secrets to enable).
+            if [ "$RUN_DB_SEEDS" = "true" ]; then
+              DB_URL="${DATABASE_URL/+psycopg2/}"
+              docker run --rm -v /home/ec2-user/app:/app -e DB_URL="$DB_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
+            fi
+
             docker-compose up -d
 
 
