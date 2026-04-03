@@ -95,31 +95,13 @@ jobs:
             docker-compose down
             docker-compose build
 
-            # ── Fresh bootstrap: wipe → schema.sql → stamp alembic → seed ──
-            # Mount repo root into api container so schema.sql and seed.sql are accessible
             REPO_ROOT="/home/ec2-user/app"
 
             echo "==> Wiping public schema..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
-            from sqlalchemy import create_engine, text; import os
-            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
-            with e.connect() as c:
-                c.execute(text('DROP SCHEMA IF EXISTS public CASCADE'))
-                c.execute(text('CREATE SCHEMA public'))
-                c.commit()
-            print('Done: schema wiped')
-            "
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/wipe_schema.py
 
             echo "==> Applying schema.sql..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
-            from sqlalchemy import create_engine, text; import os
-            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
-            with open('/repo/schema.sql') as f: sql = f.read()
-            with e.connect() as c:
-                c.execute(text(sql))
-                c.commit()
-            print('Done: schema.sql applied')
-            "
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/schema.sql
 
             echo "==> Stamping alembic at head..."
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp head"
@@ -136,15 +118,7 @@ jobs:
             done
 
             echo "==> Running seed.sql..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
-            from sqlalchemy import create_engine, text; import os
-            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
-            with open('/repo/seed.sql') as f: sql = f.read()
-            with e.connect() as c:
-                c.execute(text(sql))
-                c.commit()
-            print('Done: seed.sql applied')
-            "
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/seed.sql
 
             docker-compose up -d
             echo "==> Deploy complete!"
@@ -188,7 +162,7 @@ jobs:
             echo "=== Alembic current ==="
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current" || true
 
-            echo "=== Schema checks via SQLAlchemy ==="
+            echo "=== Schema checks ==="
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/diagnose_schema.py || true
 
             echo "=== API logs (tail 200) ==="
@@ -236,34 +210,15 @@ jobs:
 
             REPO_ROOT="/home/ec2-user/app"
 
-            echo "Bootstrapping database from schema.sql..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
-            from sqlalchemy import create_engine, text; import os
-            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
-            with e.connect() as c:
-                c.execute(text('DROP SCHEMA IF EXISTS public CASCADE'))
-                c.execute(text('CREATE SCHEMA public'))
-                c.commit()
-            with open('/repo/schema.sql') as f: sql = f.read()
-            with e.connect() as c:
-                c.execute(text(sql))
-                c.commit()
-            print('Schema bootstrapped')
-            "
+            echo "Wiping and bootstrapping from schema.sql..."
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/wipe_schema.py
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/schema.sql
 
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp head"
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
             if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
-              docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
-            from sqlalchemy import create_engine, text; import os
-            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
-            with open('/repo/seed.sql') as f: sql = f.read()
-            with e.connect() as c:
-                c.execute(text(sql))
-                c.commit()
-            print('Seed data applied')
-            "
+              docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/seed.sql
             fi
 
             docker-compose up -d
