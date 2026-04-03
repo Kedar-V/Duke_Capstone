@@ -100,11 +100,50 @@ jobs:
             docker-compose down
             docker-compose build
 
-            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
+            # If DB was initialized from newer schema.sql (projects table) but has no Alembic history,
+            # stamp baseline to the last pre-sync revision so upgrade runs only forward-safe migrations.
+            DB_URL="${DATABASE_URL/+psycopg2/}"
+            HAS_ALEMBIC_VERSION=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.alembic_version') is not null;\"" | tr -d '[:space:]')
+            HAS_PROJECTS=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.projects') is not null;\"" | tr -d '[:space:]')
+            HAS_CLIENT_INTAKE=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.client_intake_forms') is not null;\"" | tr -d '[:space:]')
+            CURRENT_ALEMBIC_REV=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select coalesce((select version_num from alembic_version limit 1),'');\"" 2>/dev/null | tr -d '[:space:]')
+
+            if [ "$HAS_ALEMBIC_VERSION" != "t" ] && [ "$HAS_PROJECTS" = "t" ] && [ "$HAS_CLIENT_INTAKE" != "t" ]; then
+              echo "Detected projects-first schema without Alembic history; stamping 0008_role_profiles baseline"
+              docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
+            fi
+
+            if [ "$HAS_ALEMBIC_VERSION" = "t" ] && [ -z "$CURRENT_ALEMBIC_REV" ] && [ "$HAS_PROJECTS" = "t" ] && [ "$HAS_CLIENT_INTAKE" != "t" ]; then
+              echo "Detected empty alembic_version with projects-first schema; stamping 0008_role_profiles baseline"
+              docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
+            fi
+
+            MIGRATION_LOG=$(mktemp)
+            set +e
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head" >"$MIGRATION_LOG" 2>&1
+            MIGRATION_EXIT=$?
+            set -e
+
+            if [ "$MIGRATION_EXIT" -ne 0 ]; then
+              if grep -q "relation \"client_intake_forms\" does not exist" "$MIGRATION_LOG"; then
+                echo "Migration failed on legacy table reference; applying baseline stamp and retrying"
+                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
+                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
+              else
+                cat "$MIGRATION_LOG"
+                exit "$MIGRATION_EXIT"
+              fi
+            fi
+
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
-            DB_URL="${DATABASE_URL/+psycopg2/}"
-            docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -tAc \"select to_regclass('public.project_comments');\""
+            for REQUIRED_TABLE in projects companies project_comments assignment_rule_configs assignment_preview_runs assignment_saved_runs; do
+              HAS_TABLE=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.${REQUIRED_TABLE}') is not null;\"" | tr -d '[:space:]')
+              if [ "$HAS_TABLE" != "t" ]; then
+                echo "Missing required table after migration: ${REQUIRED_TABLE}"
+                exit 1
+              fi
+            done
 
             if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
               docker run --rm -v /home/ec2-user/app:/app -e DB_URL="$DB_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
