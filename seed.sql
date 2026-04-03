@@ -427,6 +427,7 @@ insert into projects (
   supplementary_documents,
   video_links,
   cohort_id,
+  project_status,
   created_at,
   updated_at
 )
@@ -449,6 +450,7 @@ select
   sp.supplementary_documents,
   sp.video_links,
   sp.cohort_id,
+  'published',
   sp.created_at,
   sp.updated_at
 from seed_projects sp
