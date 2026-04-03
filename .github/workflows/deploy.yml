@@ -100,7 +100,7 @@ jobs:
             docker-compose down
             docker-compose build
 
-            SCHEMA_STATE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc 'python - <<"PY"
+            SCHEMA_STATE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "python - <<'PY'
             from sqlalchemy import create_engine, text
             import os
 
@@ -113,7 +113,7 @@ jobs:
               if has_alembic:
                 rev = conn.execute(text("select coalesce((select version_num from alembic_version limit 1), '')")).scalar() or ""
             print(f"{str(has_alembic).lower()}|{str(has_projects).lower()}|{str(has_client).lower()}|{rev}")
-            PY')
+            PY")
 
             HAS_ALEMBIC_VERSION=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $1}')
             HAS_PROJECTS=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $2}')
@@ -215,7 +215,7 @@ jobs:
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current" || true
 
             echo "=== Schema checks via SQLAlchemy ==="
-            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc 'python - <<"PY"
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "python - <<'PY'
             from sqlalchemy import create_engine, text
             import os
             engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
@@ -223,7 +223,7 @@ jobs:
               print("alembic_version:", conn.execute(text("select coalesce((select version_num from alembic_version limit 1), '')")).scalar())
               print("projects:", conn.execute(text("select to_regclass('public.projects')")).scalar())
               print("project_comments:", conn.execute(text("select to_regclass('public.project_comments')")).scalar())
-            PY' || true
+            PY" || true
 
             echo "=== API logs (tail 200) ==="
             docker-compose logs --tail=200 api || true
