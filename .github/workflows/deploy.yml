@@ -92,69 +92,62 @@ jobs:
               exit 1
             fi
 
-            RUN_DB_SEEDS_EFFECTIVE=${RUN_DB_SEEDS:-false}
-            if [ "$RUN_DB_SEEDS_OVERRIDE" = "true" ]; then
-              RUN_DB_SEEDS_EFFECTIVE=true
-            fi
-
             docker-compose down
             docker-compose build
 
-            SCHEMA_STATE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/schema_check.py)
+            # ── Fresh bootstrap: wipe → schema.sql → stamp alembic → seed ──
+            # Mount repo root into api container so schema.sql and seed.sql are accessible
+            REPO_ROOT="/home/ec2-user/app"
 
-            HAS_ALEMBIC_VERSION=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $1}')
-            HAS_PROJECTS=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $2}')
-            HAS_CLIENT_INTAKE=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $3}')
-            CURRENT_ALEMBIC_REV=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $4}')
+            echo "==> Wiping public schema..."
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
+            from sqlalchemy import create_engine, text; import os
+            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
+            with e.connect() as c:
+                c.execute(text('DROP SCHEMA IF EXISTS public CASCADE'))
+                c.execute(text('CREATE SCHEMA public'))
+                c.commit()
+            print('Done: schema wiped')
+            "
 
-            if [ "$HAS_ALEMBIC_VERSION" = "false" ] && [ "$HAS_PROJECTS" = "true" ] && [ "$HAS_CLIENT_INTAKE" = "false" ]; then
-              echo "Detected projects-first schema without Alembic history; stamping 0008_role_profiles"
-              docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
-            fi
+            echo "==> Applying schema.sql..."
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
+            from sqlalchemy import create_engine, text; import os
+            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
+            with open('/repo/schema.sql') as f: sql = f.read()
+            with e.connect() as c:
+                c.execute(text(sql))
+                c.commit()
+            print('Done: schema.sql applied')
+            "
 
-            if [ "$HAS_ALEMBIC_VERSION" = "true" ] && [ -z "$CURRENT_ALEMBIC_REV" ] && [ "$HAS_PROJECTS" = "true" ] && [ "$HAS_CLIENT_INTAKE" = "false" ]; then
-              echo "Detected empty alembic_version with projects-first schema; stamping 0008_role_profiles"
-              docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
-            fi
-
-            MIGRATION_LOG=$(mktemp)
-            set +e
-            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head" >"$MIGRATION_LOG" 2>&1
-            MIGRATION_EXIT=$?
-            set -e
-
-            if [ "$MIGRATION_EXIT" -ne 0 ]; then
-              if grep -q "relation \"client_intake_forms\" does not exist" "$MIGRATION_LOG" && [ "$HAS_PROJECTS" = "true" ]; then
-                echo "Legacy-table mismatch on projects-first schema; stamping baseline and retrying"
-                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
-                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
-              else
-                cat "$MIGRATION_LOG"
-                exit "$MIGRATION_EXIT"
-              fi
-            fi
-
+            echo "==> Stamping alembic at head..."
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp head"
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
+            echo "==> Verifying required tables..."
             for REQUIRED_TABLE in projects companies project_comments assignment_rule_configs assignment_preview_runs assignment_saved_runs; do
               HAS_TABLE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/table_check.py "$REQUIRED_TABLE")
               if [ "$HAS_TABLE" != "true" ]; then
-                echo "Missing required table after migration: ${REQUIRED_TABLE}"
+                echo "FAIL: Missing required table: ${REQUIRED_TABLE}"
                 exit 1
               fi
+              echo "  OK: ${REQUIRED_TABLE}"
             done
 
-            if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
-              PSQL_URL="${DATABASE_URL/+psycopg2/}"
-              COMPOSE_NET=$(docker network ls --format '{{.Name}}' | grep '_default$' | head -n 1)
-              if [ -z "$COMPOSE_NET" ]; then
-                echo "Could not determine docker compose default network for seeding"
-                exit 1
-              fi
-              docker run --rm --network "$COMPOSE_NET" -v /home/ec2-user/app:/app -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
-            fi
+            echo "==> Running seed.sql..."
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
+            from sqlalchemy import create_engine, text; import os
+            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
+            with open('/repo/seed.sql') as f: sql = f.read()
+            with e.connect() as c:
+                c.execute(text(sql))
+                c.commit()
+            print('Done: seed.sql applied')
+            "
 
             docker-compose up -d
+            echo "==> Deploy complete!"
 
   diagnose:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'diagnose'
@@ -241,23 +234,36 @@ jobs:
             docker-compose down
             docker-compose build
 
-            echo "Bootstrapping database from schema.sql"
-            PSQL_URL="${DATABASE_URL/+psycopg2/}"
-            COMPOSE_NET=$(docker network ls --format '{{.Name}}' | grep '_default$' | head -n 1)
-            if [ -z "$COMPOSE_NET" ]; then
-              echo "Could not determine docker compose default network"
-              exit 1
-            fi
+            REPO_ROOT="/home/ec2-user/app"
 
-            docker run --rm --network "$COMPOSE_NET" -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"'
-            docker run --rm --network "$COMPOSE_NET" -v /home/ec2-user/app:/app -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/schema.sql'
+            echo "Bootstrapping database from schema.sql..."
+            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
+            from sqlalchemy import create_engine, text; import os
+            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
+            with e.connect() as c:
+                c.execute(text('DROP SCHEMA IF EXISTS public CASCADE'))
+                c.execute(text('CREATE SCHEMA public'))
+                c.commit()
+            with open('/repo/schema.sql') as f: sql = f.read()
+            with e.connect() as c:
+                c.execute(text(sql))
+                c.commit()
+            print('Schema bootstrapped')
+            "
 
-            # Mark DB at current migration state after schema.sql bootstrap.
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp head"
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
             if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
-              docker run --rm --network "$COMPOSE_NET" -v /home/ec2-user/app:/app -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
+              docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python -c "
+            from sqlalchemy import create_engine, text; import os
+            e = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
+            with open('/repo/seed.sql') as f: sql = f.read()
+            with e.connect() as c:
+                c.execute(text(sql))
+                c.commit()
+            print('Seed data applied')
+            "
             fi
 
             docker-compose up -d
