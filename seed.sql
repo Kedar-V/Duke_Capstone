@@ -471,12 +471,13 @@ values (
   'admin',
   (select id from cohorts where name='MIDS 2026')
 )
-on conflict (id) do nothing;
+on conflict (email) do update set
+  display_name = excluded.display_name,
+  role = 'admin',
+  cohort_id = excluded.cohort_id;
 
-update users
-set role = 'admin',
-    cohort_id = (select id from cohorts where name='MIDS 2026')
-where email = 'dev@duke.edu';
+-- Advance sequence past any explicitly-set ids so roster inserts don't collide
+select setval('users_id_seq', greatest((select max(id) from users), 1));
 
 -- MIDS 2027 student roster users (password: devpassword)
 with mids_2027_roster(display_name, email) as (
@@ -539,7 +540,6 @@ on conflict (email) do update set
   deleted_at = null,
   password_hash = coalesce(users.password_hash, excluded.password_hash);
 
-select setval('users_id_seq', greatest((select max(id) from users), 1));
 
 insert into user_profiles (user_id, avg_match_score)
 values (1, 86)
