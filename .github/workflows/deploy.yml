@@ -1,77 +1,69 @@
-name: Build & Deploy to EC2 via Docker Hub
+name: Build & Deploy to EC2 via Docker
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - diwas
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to run"
+        required: true
+        default: "deploy"
+        type: choice
+        options:
+          - deploy
+          - diagnose
+      run_db_seeds:
+        description: "Force run seed.sql during this run"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  build-and-deploy:
+  deploy:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # - name: Log in to Docker Hub
-      #   uses: docker/login-action@v2
-      #   with:
-      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
-      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # - name: Build and push Docker image
-      #   uses: docker/build-push-action@v2
-      #   with:
-      #     context: .
-      #     push: true
-      #     tags: kedarvaidya05/bitcoin-app:latest
-
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v0.1.7
+        env:
+          RUN_DB_SEEDS_OVERRIDE: ${{ github.event.inputs.run_db_seeds }}
         with:
           host: ${{ secrets.EC2_IP }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: RUN_DB_SEEDS_OVERRIDE
           script: |
+            set -e
 
             if [ ! -d "/home/ec2-user/app" ]; then
-                echo "Creating /home/ec2-user/app..."
-                mkdir -p /home/ec2-user/app
-                chown ec2-user:ec2-user /home/ec2-user/app
-            else
-                echo "/home/ec2-user/app already exists, skipping creation."
+              mkdir -p /home/ec2-user/app
+              chown ec2-user:ec2-user /home/ec2-user/app
             fi
 
-      - name: Deploy on EC2
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_IP }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
             sudo yum install -y git || sudo apt-get install -y git
-      
+
             cd /home/ec2-user/app
-      
+
             if [ -d ".git" ]; then
-              echo "Repo exists, pulling latest changes..."
-              git reset --hard
+              git fetch origin
+              git checkout diwas
+              git reset --hard origin/diwas
               git clean -fd
-              git pull
-              git checkout diwas
             else
-              echo "Cleaning directory and cloning repo..."
-              # sudo rm -rf /home/ec2-user/app/*
               git clone https://github.com/Kedar-V/Duke_Capstone.git .
+              git fetch origin
               git checkout diwas
+              git reset --hard origin/diwas
             fi
 
-      - name: Start containers on EC2
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_IP }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
             if ! command -v docker >/dev/null 2>&1; then
-              sudo yum install -y docker || sudo apt-get update && sudo apt-get install -y docker.io
+              sudo yum install -y docker || (sudo apt-get update && sudo apt-get install -y docker.io)
               sudo systemctl enable docker
               sudo systemctl start docker
               sudo usermod -aG docker ec2-user
@@ -82,7 +74,6 @@ jobs:
               sudo chmod +x /usr/local/bin/docker-compose
             fi
 
-            cd /home/ec2-user/app
             if [ ! -f ".env" ]; then
               echo "Missing /home/ec2-user/app/.env on EC2"
               exit 1
@@ -100,29 +91,70 @@ jobs:
               echo "TEAMMATE_PREFS_KEY is missing in EC2 .env"
               exit 1
             fi
-            RUN_DB_SEEDS=${RUN_DB_SEEDS:-false}
 
-            # Use compose build first so migration job runs against the same image dependencies.
+            RUN_DB_SEEDS_EFFECTIVE=${RUN_DB_SEEDS:-false}
+            if [ "$RUN_DB_SEEDS_OVERRIDE" = "true" ]; then
+              RUN_DB_SEEDS_EFFECTIVE=true
+            fi
+
             docker-compose down
             docker-compose build
 
-            # Apply schema changes to RDS before launching refreshed API/frontend containers.
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
-            # Optional one-time seed load against RDS (set RUN_DB_SEEDS=true in secrets to enable).
-            if [ "$RUN_DB_SEEDS" = "true" ]; then
-              DB_URL="${DATABASE_URL/+psycopg2/}"
+            DB_URL="${DATABASE_URL/+psycopg2/}"
+            docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -tAc \"select to_regclass('public.project_comments');\""
+
+            if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
               docker run --rm -v /home/ec2-user/app:/app -e DB_URL="$DB_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
             fi
 
             docker-compose up -d
 
+  diagnose:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'diagnose'
+    runs-on: ubuntu-latest
 
-      # - name: Run startup.sh inside container
-      #   uses: appleboy/ssh-action@v0.1.7
-      #   with:
-      #     host: ${{ secrets.EC2_IP }}
-      #     username: ec2-user
-      #     key: ${{ secrets.EC2_SSH_KEY }}
-      #     script: |
-      #       docker exec -i python_week4 bash -c "chmod +x /app/startup/startup.sh && nohup /app/startup/startup.sh > /app/startup/startup.log 2>&1 &"
+    steps:
+      - name: Remote diagnostics on EC2
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_IP }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd /home/ec2-user/app
+
+            echo "=== Git state ==="
+            git rev-parse --abbrev-ref HEAD || true
+            git log -1 --oneline || true
+
+            if [ -f ".env" ]; then
+              set -a
+              . ./.env
+              set +a
+            else
+              echo "Missing .env"
+              exit 1
+            fi
+
+            if [ -z "$DATABASE_URL" ]; then
+              echo "DATABASE_URL missing"
+              exit 1
+            fi
+
+            echo "=== Docker status ==="
+            docker-compose ps || true
+
+            echo "=== Alembic current ==="
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current" || true
+
+            echo "=== Schema checks ==="
+            DB_URL="${DATABASE_URL/+psycopg2/}"
+            docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select version_num from alembic_version;\"" || true
+            docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.project_comments');\"" || true
+
+            echo "=== API logs (tail 200) ==="
+            docker-compose logs --tail=200 api || true
