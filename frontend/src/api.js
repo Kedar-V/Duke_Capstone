@@ -116,6 +116,13 @@ export function firstLoginVerifyOtp({ email, otp, newPassword, displayName }) {
   })
 }
 
+export function clerkExchange(token) {
+  return request('/api/auth/clerk-exchange', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
 export function getCart() {
   return request('/api/cart')
 }
