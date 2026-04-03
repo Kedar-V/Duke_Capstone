@@ -102,11 +102,25 @@ jobs:
 
             # If DB was initialized from newer schema.sql (projects table) but has no Alembic history,
             # stamp baseline to the last pre-sync revision so upgrade runs only forward-safe migrations.
-            DB_URL="${DATABASE_URL/+psycopg2/}"
-            HAS_ALEMBIC_VERSION=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.alembic_version') is not null;\"" | tr -d '[:space:]')
-            HAS_PROJECTS=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.projects') is not null;\"" | tr -d '[:space:]')
-            HAS_CLIENT_INTAKE=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.client_intake_forms') is not null;\"" | tr -d '[:space:]')
-            CURRENT_ALEMBIC_REV=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select coalesce((select version_num from alembic_version limit 1),'');\"" 2>/dev/null | tr -d '[:space:]')
+            SCHEMA_STATE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc 'python - <<"PY"
+      from sqlalchemy import create_engine, text
+      import os
+
+      engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+      with engine.connect() as conn:
+        has_alembic = conn.execute(text("select to_regclass('public.alembic_version') is not null")).scalar()
+        has_projects = conn.execute(text("select to_regclass('public.projects') is not null")).scalar()
+        has_client = conn.execute(text("select to_regclass('public.client_intake_forms') is not null")).scalar()
+        rev = ""
+        if has_alembic:
+          rev = conn.execute(text("select coalesce((select version_num from alembic_version limit 1),'')")).scalar() or ""
+      print(f"{str(bool(has_alembic)).lower()}|{str(bool(has_projects)).lower()}|{str(bool(has_client)).lower()}|{rev}")
+      PY')
+
+            HAS_ALEMBIC_VERSION=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $1}')
+            HAS_PROJECTS=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $2}')
+            HAS_CLIENT_INTAKE=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $3}')
+            CURRENT_ALEMBIC_REV=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $4}')
 
             if [ "$HAS_ALEMBIC_VERSION" != "t" ] && [ "$HAS_PROJECTS" = "t" ] && [ "$HAS_CLIENT_INTAKE" != "t" ]; then
               echo "Detected projects-first schema without Alembic history; stamping 0008_role_profiles baseline"
@@ -126,9 +140,15 @@ jobs:
 
             if [ "$MIGRATION_EXIT" -ne 0 ]; then
               if grep -q "relation \"client_intake_forms\" does not exist" "$MIGRATION_LOG"; then
-                echo "Migration failed on legacy table reference; applying baseline stamp and retrying"
-                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
-                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
+                if [ "$HAS_PROJECTS" = "true" ]; then
+                  echo "Migration failed on legacy table reference with projects-first schema; applying baseline stamp and retrying"
+                  docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
+                  docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
+                else
+                  echo "Migration failed and projects table is absent. Not safe to auto-stamp baseline."
+                  cat "$MIGRATION_LOG"
+                  exit "$MIGRATION_EXIT"
+                fi
               else
                 cat "$MIGRATION_LOG"
                 exit "$MIGRATION_EXIT"
@@ -138,8 +158,14 @@ jobs:
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
             for REQUIRED_TABLE in projects companies project_comments assignment_rule_configs assignment_preview_runs assignment_saved_runs; do
-              HAS_TABLE=$(docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.${REQUIRED_TABLE}') is not null;\"" | tr -d '[:space:]')
-              if [ "$HAS_TABLE" != "t" ]; then
+              HAS_TABLE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "python - <<'PY'
+from sqlalchemy import create_engine, text
+import os
+engine = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
+with engine.connect() as conn:
+    print(str(bool(conn.execute(text(\"select to_regclass('public.${REQUIRED_TABLE}') is not null\")).scalar())).lower())
+PY")
+              if [ "$HAS_TABLE" != "true" ]; then
                 echo "Missing required table after migration: ${REQUIRED_TABLE}"
                 exit 1
               fi
