@@ -22,6 +22,11 @@ on:
         type: boolean
 
 jobs:
+  # ─────────────────────────────────────────────────────────
+  # DEPLOY (default on every push)
+  #   Pulls code, builds, runs NEW alembic migrations only.
+  #   Does NOT wipe the database or re-seed.
+  # ─────────────────────────────────────────────────────────
   deploy:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
     runs-on: ubuntu-latest
@@ -95,34 +100,28 @@ jobs:
             docker-compose down
             docker-compose build
 
-            REPO_ROOT="/home/ec2-user/app"
-
-            echo "==> Wiping public schema..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/wipe_schema.py
-
-            echo "==> Applying schema.sql..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/schema.sql
-
-            echo "==> Stamping alembic at head..."
-            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp head"
+            # ── Run only NEW alembic migrations (safe, incremental) ──
+            echo "==> Running alembic migrations..."
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
-            echo "==> Verifying required tables..."
-            for REQUIRED_TABLE in projects companies project_comments assignment_rule_configs assignment_preview_runs assignment_saved_runs; do
-              HAS_TABLE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/table_check.py "$REQUIRED_TABLE")
-              if [ "$HAS_TABLE" != "true" ]; then
-                echo "FAIL: Missing required table: ${REQUIRED_TABLE}"
-                exit 1
-              fi
-              echo "  OK: ${REQUIRED_TABLE}"
-            done
-
-            echo "==> Running seed.sql..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/seed.sql
+            # ── Optional: run seeds only if explicitly requested ──
+            RUN_DB_SEEDS_EFFECTIVE=${RUN_DB_SEEDS:-false}
+            if [ "$RUN_DB_SEEDS_OVERRIDE" = "true" ]; then
+              RUN_DB_SEEDS_EFFECTIVE=true
+            fi
+            if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
+              REPO_ROOT="/home/ec2-user/app"
+              echo "==> Running seed.sql (manually requested)..."
+              docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/seed.sql
+            fi
 
             docker-compose up -d
             echo "==> Deploy complete!"
 
+  # ─────────────────────────────────────────────────────────
+  # DIAGNOSE (manual trigger only)
+  # ─────────────────────────────────────────────────────────
   diagnose:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'diagnose'
     runs-on: ubuntu-latest
@@ -168,6 +167,11 @@ jobs:
             echo "=== API logs (tail 200) ==="
             docker-compose logs --tail=200 api || true
 
+  # ─────────────────────────────────────────────────────────
+  # BOOTSTRAP DB (manual trigger only — DESTRUCTIVE)
+  #   Wipes the entire database and rebuilds from schema.sql.
+  #   Only use this when the DB is in an unrecoverable state.
+  # ─────────────────────────────────────────────────────────
   bootstrap-db:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'bootstrap_db'
     runs-on: ubuntu-latest
@@ -210,15 +214,20 @@ jobs:
 
             REPO_ROOT="/home/ec2-user/app"
 
-            echo "Wiping and bootstrapping from schema.sql..."
-            docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/wipe_schema.py
+            echo "==> WARNING: Wiping entire database..."
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/wipe_schema.py
+
+            echo "==> Applying schema.sql..."
             docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/schema.sql
 
+            echo "==> Stamping alembic at head..."
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp head"
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
             if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
+              echo "==> Running seed.sql..."
               docker-compose run --rm -v "$REPO_ROOT:/repo" -e DATABASE_URL="$DATABASE_URL" api python /app/scripts/run_sql.py /repo/seed.sql
             fi
 
             docker-compose up -d
+            echo "==> Bootstrap complete!"
