@@ -7,15 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Action to run"
+        description: Action to run
         required: true
-        default: "deploy"
+        default: deploy
         type: choice
         options:
           - deploy
           - diagnose
+          - bootstrap_db
       run_db_seeds:
-        description: "Force run seed.sql during this run"
+        description: Force run seed.sql during this run
         required: false
         default: false
         type: boolean
@@ -49,7 +50,6 @@ jobs:
             sudo yum install -y git || sudo apt-get install -y git
 
             cd /home/ec2-user/app
-
             if [ -d ".git" ]; then
               git fetch origin
               git checkout diwas
@@ -100,35 +100,33 @@ jobs:
             docker-compose down
             docker-compose build
 
-            # If DB was initialized from newer schema.sql (projects table) but has no Alembic history,
-            # stamp baseline to the last pre-sync revision so upgrade runs only forward-safe migrations.
             SCHEMA_STATE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc 'python - <<"PY"
-      from sqlalchemy import create_engine, text
-      import os
+from sqlalchemy import create_engine, text
+import os
 
-      engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
-      with engine.connect() as conn:
-        has_alembic = conn.execute(text("select to_regclass('public.alembic_version') is not null")).scalar()
-        has_projects = conn.execute(text("select to_regclass('public.projects') is not null")).scalar()
-        has_client = conn.execute(text("select to_regclass('public.client_intake_forms') is not null")).scalar()
-        rev = ""
-        if has_alembic:
-          rev = conn.execute(text("select coalesce((select version_num from alembic_version limit 1),'')")).scalar() or ""
-      print(f"{str(bool(has_alembic)).lower()}|{str(bool(has_projects)).lower()}|{str(bool(has_client)).lower()}|{rev}")
-      PY')
+engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+with engine.connect() as conn:
+    has_alembic = bool(conn.execute(text("select to_regclass('public.alembic_version') is not null")).scalar())
+    has_projects = bool(conn.execute(text("select to_regclass('public.projects') is not null")).scalar())
+    has_client = bool(conn.execute(text("select to_regclass('public.client_intake_forms') is not null")).scalar())
+    rev = ""
+    if has_alembic:
+        rev = conn.execute(text("select coalesce((select version_num from alembic_version limit 1), '')")).scalar() or ""
+print(f"{str(has_alembic).lower()}|{str(has_projects).lower()}|{str(has_client).lower()}|{rev}")
+PY')
 
             HAS_ALEMBIC_VERSION=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $1}')
             HAS_PROJECTS=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $2}')
             HAS_CLIENT_INTAKE=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $3}')
             CURRENT_ALEMBIC_REV=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $4}')
 
-            if [ "$HAS_ALEMBIC_VERSION" != "t" ] && [ "$HAS_PROJECTS" = "t" ] && [ "$HAS_CLIENT_INTAKE" != "t" ]; then
-              echo "Detected projects-first schema without Alembic history; stamping 0008_role_profiles baseline"
+            if [ "$HAS_ALEMBIC_VERSION" = "false" ] && [ "$HAS_PROJECTS" = "true" ] && [ "$HAS_CLIENT_INTAKE" = "false" ]; then
+              echo "Detected projects-first schema without Alembic history; stamping 0008_role_profiles"
               docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
             fi
 
-            if [ "$HAS_ALEMBIC_VERSION" = "t" ] && [ -z "$CURRENT_ALEMBIC_REV" ] && [ "$HAS_PROJECTS" = "t" ] && [ "$HAS_CLIENT_INTAKE" != "t" ]; then
-              echo "Detected empty alembic_version with projects-first schema; stamping 0008_role_profiles baseline"
+            if [ "$HAS_ALEMBIC_VERSION" = "true" ] && [ -z "$CURRENT_ALEMBIC_REV" ] && [ "$HAS_PROJECTS" = "true" ] && [ "$HAS_CLIENT_INTAKE" = "false" ]; then
+              echo "Detected empty alembic_version with projects-first schema; stamping 0008_role_profiles"
               docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
             fi
 
@@ -139,16 +137,10 @@ jobs:
             set -e
 
             if [ "$MIGRATION_EXIT" -ne 0 ]; then
-              if grep -q "relation \"client_intake_forms\" does not exist" "$MIGRATION_LOG"; then
-                if [ "$HAS_PROJECTS" = "true" ]; then
-                  echo "Migration failed on legacy table reference with projects-first schema; applying baseline stamp and retrying"
-                  docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
-                  docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
-                else
-                  echo "Migration failed and projects table is absent. Not safe to auto-stamp baseline."
-                  cat "$MIGRATION_LOG"
-                  exit "$MIGRATION_EXIT"
-                fi
+              if grep -q "relation \"client_intake_forms\" does not exist" "$MIGRATION_LOG" && [ "$HAS_PROJECTS" = "true" ]; then
+                echo "Legacy-table mismatch on projects-first schema; stamping baseline and retrying"
+                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp 0008_role_profiles"
+                docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini upgrade head"
               else
                 cat "$MIGRATION_LOG"
                 exit "$MIGRATION_EXIT"
@@ -172,7 +164,13 @@ PY")
             done
 
             if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
-              docker run --rm -v /home/ec2-user/app:/app -e DB_URL="$DB_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
+              PSQL_URL="${DATABASE_URL/+psycopg2/}"
+              COMPOSE_NET=$(docker network ls --format '{{.Name}}' | grep '_default$' | head -n 1)
+              if [ -z "$COMPOSE_NET" ]; then
+                echo "Could not determine docker compose default network for seeding"
+                exit 1
+              fi
+              docker run --rm --network "$COMPOSE_NET" -v /home/ec2-user/app:/app -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
             fi
 
             docker-compose up -d
@@ -216,10 +214,77 @@ PY")
             echo "=== Alembic current ==="
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current" || true
 
-            echo "=== Schema checks ==="
-            DB_URL="${DATABASE_URL/+psycopg2/}"
-            docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select version_num from alembic_version;\"" || true
-            docker run --rm -e DB_URL="$DB_URL" postgres:15 sh -lc "psql \"$DB_URL\" -tAc \"select to_regclass('public.project_comments');\"" || true
+            echo "=== Schema checks via SQLAlchemy ==="
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc 'python - <<"PY"
+from sqlalchemy import create_engine, text
+import os
+engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+with engine.connect() as conn:
+    print("alembic_version:", conn.execute(text("select coalesce((select version_num from alembic_version limit 1), '')")).scalar())
+    print("projects:", conn.execute(text("select to_regclass('public.projects')")).scalar())
+    print("project_comments:", conn.execute(text("select to_regclass('public.project_comments')")).scalar())
+PY' || true
 
             echo "=== API logs (tail 200) ==="
             docker-compose logs --tail=200 api || true
+
+  bootstrap-db:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'bootstrap_db'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fresh bootstrap DB on EC2
+        uses: appleboy/ssh-action@v0.1.7
+        env:
+          RUN_DB_SEEDS_OVERRIDE: ${{ github.event.inputs.run_db_seeds }}
+        with:
+          host: ${{ secrets.EC2_IP }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: RUN_DB_SEEDS_OVERRIDE
+          script: |
+            set -e
+            cd /home/ec2-user/app
+
+            if [ ! -f ".env" ]; then
+              echo "Missing .env"
+              exit 1
+            fi
+
+            set -a
+            . ./.env
+            set +a
+
+            if [ -z "$DATABASE_URL" ]; then
+              echo "DATABASE_URL missing"
+              exit 1
+            fi
+
+            RUN_DB_SEEDS_EFFECTIVE=${RUN_DB_SEEDS:-false}
+            if [ "$RUN_DB_SEEDS_OVERRIDE" = "true" ]; then
+              RUN_DB_SEEDS_EFFECTIVE=true
+            fi
+
+            docker-compose down
+            docker-compose build
+
+            echo "Bootstrapping database from schema.sql"
+            PSQL_URL="${DATABASE_URL/+psycopg2/}"
+            COMPOSE_NET=$(docker network ls --format '{{.Name}}' | grep '_default$' | head -n 1)
+            if [ -z "$COMPOSE_NET" ]; then
+              echo "Could not determine docker compose default network"
+              exit 1
+            fi
+
+            docker run --rm --network "$COMPOSE_NET" -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"'
+            docker run --rm --network "$COMPOSE_NET" -v /home/ec2-user/app:/app -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/schema.sql'
+
+            # Mark DB at current migration state after schema.sql bootstrap.
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini stamp head"
+            docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
+
+            if [ "$RUN_DB_SEEDS_EFFECTIVE" = "true" ]; then
+              docker run --rm --network "$COMPOSE_NET" -v /home/ec2-user/app:/app -e DB_URL="$PSQL_URL" postgres:15 sh -lc 'psql "$DB_URL" -v ON_ERROR_STOP=1 -f /app/seed.sql'
+            fi
+
+            docker-compose up -d
