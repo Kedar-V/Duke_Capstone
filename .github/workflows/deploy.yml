@@ -55,10 +55,12 @@ jobs:
               git reset --hard
               git clean -fd
               git pull
+              git checkout diwas
             else
               echo "Cleaning directory and cloning repo..."
               # sudo rm -rf /home/ec2-user/app/*
               git clone https://github.com/Kedar-V/Duke_Capstone.git .
+              git checkout diwas
             fi
 
       - name: Start containers on EC2
