@@ -91,7 +91,9 @@ def _project_cover_image_url(row: ClientIntakeForm) -> Optional[str]:
     return None
 
 
-def _project_raw_with_cover_image(existing_raw: object, cover_image_url: Optional[str]) -> dict:
+def _project_raw_with_cover_image(
+    existing_raw: object, cover_image_url: Optional[str]
+) -> dict:
     base = dict(existing_raw) if isinstance(existing_raw, dict) else {}
     base["cover_image_url"] = (cover_image_url or "").strip() or None
     return base
@@ -109,9 +111,15 @@ def _ensure_project_status_schema(db: Session) -> None:
     if _project_status_schema_ready:
         return
 
-    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_status TEXT"))
-    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS published_at timestamptz"))
-    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at timestamptz"))
+    db.execute(
+        text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_status TEXT")
+    )
+    db.execute(
+        text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS published_at timestamptz")
+    )
+    db.execute(
+        text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at timestamptz")
+    )
     db.execute(
         text(
             """
@@ -130,7 +138,9 @@ def _ensure_project_status_schema(db: Session) -> None:
             """
         )
     )
-    db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET DEFAULT 'draft'"))
+    db.execute(
+        text("ALTER TABLE projects ALTER COLUMN project_status SET DEFAULT 'draft'")
+    )
     db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET NOT NULL"))
     db.commit()
     _project_status_schema_ready = True
@@ -141,9 +151,15 @@ def _apply_project_status_transition(row: ClientIntakeForm, next_status: str) ->
     previous_status = _normalize_project_status(getattr(row, "project_status", None))
     row.project_status = next_status
 
-    if next_status == _PROJECT_STATUS_PUBLISHED and previous_status != _PROJECT_STATUS_PUBLISHED:
+    if (
+        next_status == _PROJECT_STATUS_PUBLISHED
+        and previous_status != _PROJECT_STATUS_PUBLISHED
+    ):
         row.published_at = datetime.now(timezone.utc)
-    if next_status == _PROJECT_STATUS_ARCHIVED and previous_status != _PROJECT_STATUS_ARCHIVED:
+    if (
+        next_status == _PROJECT_STATUS_ARCHIVED
+        and previous_status != _PROJECT_STATUS_ARCHIVED
+    ):
         row.archived_at = datetime.now(timezone.utc)
 
 
@@ -389,9 +405,11 @@ def _sync_role_profile_rows(
     faculty_title: Optional[str] = None,
 ) -> None:
     _ensure_role_profile_schema(db)
-    faculty_profile = db.execute(
-        select(FacultyProfile).where(FacultyProfile.user_id == user.id)
-    ).scalars().first()
+    faculty_profile = (
+        db.execute(select(FacultyProfile).where(FacultyProfile.user_id == user.id))
+        .scalars()
+        .first()
+    )
 
     if user.role == "faculty":
         if not faculty_profile:
@@ -409,13 +427,17 @@ def _faculty_profile_map(db: Session, user_ids: list[int]) -> dict[int, FacultyP
     if not user_ids:
         return {}
 
-    rows = db.execute(
-        select(FacultyProfile).where(FacultyProfile.user_id.in_(user_ids))
-    ).scalars().all()
+    rows = (
+        db.execute(select(FacultyProfile).where(FacultyProfile.user_id.in_(user_ids)))
+        .scalars()
+        .all()
+    )
     return {row.user_id: row for row in rows}
 
 
-def _serialize_admin_user(row: User, faculty_profile: Optional[FacultyProfile] = None) -> AdminUserOut:
+def _serialize_admin_user(
+    row: User, faculty_profile: Optional[FacultyProfile] = None
+) -> AdminUserOut:
     return AdminUserOut(
         id=row.id,
         email=row.email,
@@ -433,14 +455,16 @@ def _sync_student_profile_row(db: Session, user: User) -> None:
     if user.role != "student":
         return
 
-    student = db.execute(
-        select(Student).where(Student.user_id == user.id)
-    ).scalars().first()
+    student = (
+        db.execute(select(Student).where(Student.user_id == user.id)).scalars().first()
+    )
 
     if not student and user.email:
-        student = db.execute(
-            select(Student).where(Student.email == user.email)
-        ).scalars().first()
+        student = (
+            db.execute(select(Student).where(Student.email == user.email))
+            .scalars()
+            .first()
+        )
 
     full_name = (user.display_name or "").strip() or (
         (user.email.split("@")[0] if user.email else "Student")
@@ -465,7 +489,9 @@ def _sync_student_profile_row(db: Session, user: User) -> None:
         )
 
 
-def _deactivate_rule_configs(db: Session, cohort_id: Optional[int], keep_id: Optional[int] = None) -> None:
+def _deactivate_rule_configs(
+    db: Session, cohort_id: Optional[int], keep_id: Optional[int] = None
+) -> None:
     stmt = select(AssignmentRuleConfig).where(AssignmentRuleConfig.is_active.is_(True))
     if cohort_id is None:
         stmt = stmt.where(AssignmentRuleConfig.cohort_id.is_(None))
@@ -481,9 +507,13 @@ def _deactivate_rule_configs(db: Session, cohort_id: Optional[int], keep_id: Opt
 
 
 def _rule_config_or_404(db: Session, config_id: int) -> AssignmentRuleConfig:
-    row = db.execute(
-        select(AssignmentRuleConfig).where(AssignmentRuleConfig.id == config_id)
-    ).scalars().first()
+    row = (
+        db.execute(
+            select(AssignmentRuleConfig).where(AssignmentRuleConfig.id == config_id)
+        )
+        .scalars()
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Assignment rule config not found")
     return row
@@ -563,7 +593,9 @@ def _clamp_team_size(value: int, low: int = 3, high: int = 5) -> int:
     return max(low, min(high, int(value)))
 
 
-def _partition_team_sizes(total: int, *, min_size: int, max_size: int, target_size: int) -> list[int]:
+def _partition_team_sizes(
+    total: int, *, min_size: int, max_size: int, target_size: int
+) -> list[int]:
     if total <= 0:
         return []
     if total <= max_size:
@@ -572,7 +604,9 @@ def _partition_team_sizes(total: int, *, min_size: int, max_size: int, target_si
     min_teams = max(1, math.ceil(total / max_size))
     max_teams = max(1, total // min_size)
     if min_teams > max_teams:
-        return [max_size] * (total // max_size) + ([total % max_size] if total % max_size else [])
+        return [max_size] * (total // max_size) + (
+            [total % max_size] if total % max_size else []
+        )
 
     preferred_teams = int(round(total / max(target_size, 1)))
     team_count = max(min_teams, min(max_teams, preferred_teams))
@@ -593,9 +627,13 @@ def _build_integrity_report(
     project_demand: dict[int, int],
 ) -> AssignmentPreviewIntegrityOut:
     submitted_rankings = len(submitted_user_ids)
-    complete_rankings = sum(1 for uid in submitted_user_ids if len(ranking_map.get(uid, {})) >= 10)
+    complete_rankings = sum(
+        1 for uid in submitted_user_ids if len(ranking_map.get(uid, {})) >= 10
+    )
     rankings_missing = max(total_students - submitted_rankings, 0)
-    projects_without_demand = sum(1 for _, demand in project_demand.items() if demand <= 0)
+    projects_without_demand = sum(
+        1 for _, demand in project_demand.items() if demand <= 0
+    )
 
     blocking_issues: list[str] = []
     warnings: list[str] = []
@@ -605,7 +643,9 @@ def _build_integrity_report(
     if projects_considered == 0:
         blocking_issues.append("No projects are in scope for this run.")
     if submitted_rankings == 0 and total_students > 0:
-        blocking_issues.append("No submitted rankings were found for in-scope students.")
+        blocking_issues.append(
+            "No submitted rankings were found for in-scope students."
+        )
 
     if rankings_missing > 0:
         warnings.append(f"{rankings_missing} students have not submitted rankings.")
@@ -618,7 +658,9 @@ def _build_integrity_report(
             f"Only {projects_considered} projects are available, but about {projects_needed} are needed for balanced capacity."
         )
     if projects_without_demand > 0:
-        warnings.append(f"{projects_without_demand} projects have no ranking demand signal.")
+        warnings.append(
+            f"{projects_without_demand} projects have no ranking demand signal."
+        )
 
     return AssignmentPreviewIntegrityOut(
         ready=len(blocking_issues) == 0,
@@ -713,6 +755,212 @@ def _serialize_saved_run_row(row) -> AssignmentSavedRunOut:
     )
 
 
+def _solve_assignment_ilp(
+    *,
+    students: list[User],
+    selected_project_ids: list[int],
+    ranking_map: dict[int, dict[int, int]],
+    rating_map: dict[int, dict[int, int]],
+    wants: dict[int, set[int]],
+    avoids: dict[int, set[int]],
+    normalized_preassigned: list[tuple[int, int]],
+    rule: AssignmentRuleConfig,
+    min_team_size: int,
+    max_team_size: int,
+) -> tuple[
+    dict[int, int],
+    dict[int, int],
+    dict[int, int],
+    set[int],
+    dict[int, list[int]],
+    list[str],
+]:
+    warnings: list[str] = []
+
+    try:
+        import pulp as pl  # type: ignore[import-not-found]
+    except Exception:
+        warnings.append("ILP solver package is unavailable; no assignment produced.")
+        return {}, {}, {}, set(), {pid: [] for pid in selected_project_ids}, warnings
+
+    user_ids = [row.id for row in students]
+    user_id_set = set(user_ids)
+    project_ids = list(selected_project_ids)
+    if not user_ids or not project_ids:
+        return {}, {}, {}, set(), {pid: [] for pid in selected_project_ids}, warnings
+
+    team_upper_bound = max(1, math.ceil(len(user_ids) / max(min_team_size, 1)))
+
+    problem = pl.LpProblem("capstone_assignment", pl.LpMaximize)
+
+    x: dict[tuple[int, int], object] = {
+        (uid, pid): pl.LpVariable(f"x_{uid}_{pid}", cat=pl.LpBinary)
+        for uid in user_ids
+        for pid in project_ids
+    }
+    t: dict[int, object] = {
+        pid: pl.LpVariable(
+            f"t_{pid}", lowBound=0, upBound=team_upper_bound, cat=pl.LpInteger
+        )
+        for pid in project_ids
+    }
+
+    for uid in user_ids:
+        problem += pl.lpSum(x[(uid, pid)] for pid in project_ids) <= 1
+
+    for pid in project_ids:
+        project_load = pl.lpSum(x[(uid, pid)] for uid in user_ids)
+        problem += project_load >= min_team_size * t[pid]
+        problem += project_load <= max_team_size * t[pid]
+        for uid in user_ids:
+            problem += x[(uid, pid)] <= t[pid]
+
+    preassigned_user_ids: set[int] = set()
+    for uid, pid in normalized_preassigned:
+        if uid not in user_id_set or pid not in project_ids:
+            continue
+        preassigned_user_ids.add(uid)
+        problem += x[(uid, pid)] == 1
+
+    avoid_pair_set: set[tuple[int, int]] = set()
+    for uid, teammate_ids in avoids.items():
+        if uid not in user_id_set:
+            continue
+        for teammate_id in teammate_ids:
+            if teammate_id in user_id_set and teammate_id != uid:
+                a, b = sorted((uid, teammate_id))
+                avoid_pair_set.add((a, b))
+
+    if bool(rule.hard_avoid):
+        for uid_a, uid_b in sorted(avoid_pair_set):
+            for pid in project_ids:
+                problem += x[(uid_a, pid)] + x[(uid_b, pid)] <= 1
+
+    pair_vars: dict[tuple[int, int, int], object] = {}
+    pair_coeffs: list[tuple[object, int]] = []
+
+    for uid, teammate_ids in wants.items():
+        if uid not in user_id_set:
+            continue
+        for teammate_id in teammate_ids:
+            if teammate_id not in user_id_set or teammate_id == uid:
+                continue
+            for pid in project_ids:
+                key = (uid, teammate_id, pid)
+                z = pl.LpVariable(f"want_{uid}_{teammate_id}_{pid}", cat=pl.LpBinary)
+                pair_vars[key] = z
+                problem += z <= x[(uid, pid)]
+                problem += z <= x[(teammate_id, pid)]
+                problem += z >= x[(uid, pid)] + x[(teammate_id, pid)] - 1
+                pair_coeffs.append((z, int(rule.weight_mutual_want)))
+
+    if not bool(rule.hard_avoid):
+        for uid, teammate_ids in avoids.items():
+            if uid not in user_id_set:
+                continue
+            for teammate_id in teammate_ids:
+                if teammate_id not in user_id_set or teammate_id == uid:
+                    continue
+                for pid in project_ids:
+                    key = (uid, teammate_id, pid)
+                    z = pl.LpVariable(
+                        f"avoid_{uid}_{teammate_id}_{pid}", cat=pl.LpBinary
+                    )
+                    pair_vars[key] = z
+                    problem += z <= x[(uid, pid)]
+                    problem += z <= x[(teammate_id, pid)]
+                    problem += z >= x[(uid, pid)] + x[(teammate_id, pid)] - 1
+                    pair_coeffs.append((z, -int(rule.penalty_avoid)))
+
+    for pid in project_ids:
+        low_pref_terms = []
+        for uid in user_ids:
+            rank = ranking_map.get(uid, {}).get(pid)
+            is_low_pref = 1 if (rank is not None and int(rank) > 5) else 0
+            if is_low_pref:
+                low_pref_terms.append(x[(uid, pid)])
+        if low_pref_terms:
+            problem += (
+                pl.lpSum(low_pref_terms)
+                <= int(rule.max_low_preference_per_team) * t[pid]
+            )
+
+    assignment_bonus = 10_000
+    assignment_terms = []
+    for uid in user_ids:
+        for pid in project_ids:
+            rank = ranking_map.get(uid, {}).get(pid)
+            pref_points = max(11 - int(rank), 0) if rank else 0
+            rating_value = int(rating_map.get(uid, {}).get(pid, 0) or 0)
+            coeff = (
+                pref_points * int(rule.weight_project_preference)
+                + rating_value * int(rule.weight_project_rating)
+                + assignment_bonus
+            )
+            assignment_terms.append(coeff * x[(uid, pid)])
+
+    team_count_penalty = 1
+    team_terms = [-team_count_penalty * t[pid] for pid in project_ids]
+    pair_terms = [coeff * var for var, coeff in pair_coeffs]
+    problem += pl.lpSum(assignment_terms + pair_terms + team_terms)
+
+    solver = pl.PULP_CBC_CMD(msg=False, timeLimit=30)
+    problem.solve(solver)
+    status_name = pl.LpStatus.get(problem.status, "Unknown")
+    if status_name not in {"Optimal", "Feasible"}:
+        warnings.append(
+            f"ILP could not find a feasible assignment (status: {status_name})."
+        )
+        return (
+            {},
+            {},
+            {},
+            preassigned_user_ids,
+            {pid: [] for pid in project_ids},
+            warnings,
+        )
+
+    assigned_project_by_user: dict[int, int] = {}
+    users_by_project: dict[int, list[int]] = {pid: [] for pid in project_ids}
+    for uid in user_ids:
+        for pid in project_ids:
+            if (pl.value(x[(uid, pid)]) or 0) >= 0.5:
+                assigned_project_by_user[uid] = pid
+                users_by_project[pid].append(uid)
+                break
+
+    for pid in project_ids:
+        users_by_project[pid].sort()
+
+    user_scores: dict[int, int] = {}
+    user_assigned_rank: dict[int, int] = {}
+    for uid, pid in assigned_project_by_user.items():
+        rank = ranking_map.get(uid, {}).get(pid)
+        pref_points = max(11 - int(rank), 0) if rank else 0
+        rating_value = int(rating_map.get(uid, {}).get(pid, 0) or 0)
+        teammate_ids = [tid for tid in users_by_project.get(pid, []) if tid != uid]
+        want_bonus = sum(1 for tid in teammate_ids if tid in wants.get(uid, set()))
+        avoid_hits = sum(1 for tid in teammate_ids if tid in avoids.get(uid, set()))
+        score = (
+            pref_points * int(rule.weight_project_preference)
+            + rating_value * int(rule.weight_project_rating)
+            + want_bonus * int(rule.weight_mutual_want)
+            - avoid_hits * int(rule.penalty_avoid)
+        )
+        user_scores[uid] = int(score)
+        if rank is not None:
+            user_assigned_rank[uid] = int(rank)
+
+    return (
+        assigned_project_by_user,
+        user_scores,
+        user_assigned_rank,
+        preassigned_user_ids,
+        users_by_project,
+        warnings,
+    )
+
+
 def _build_assignment_preview(
     db: Session,
     rule: AssignmentRuleConfig,
@@ -800,8 +1048,9 @@ def _build_assignment_preview(
     ranking_map: dict[int, dict[int, int]] = {uid: {} for uid in user_ids}
     if ranking_user_by_id:
         ranking_items = db.execute(
-            select(RankingItem.ranking_id, RankingItem.project_id, RankingItem.rank)
-            .where(RankingItem.ranking_id.in_(list(ranking_user_by_id.keys())))
+            select(
+                RankingItem.ranking_id, RankingItem.project_id, RankingItem.rank
+            ).where(RankingItem.ranking_id.in_(list(ranking_user_by_id.keys())))
         ).all()
         for ranking_id, project_id, rank in ranking_items:
             user_id = ranking_user_by_id.get(ranking_id)
@@ -812,8 +1061,9 @@ def _build_assignment_preview(
     rating_map: dict[int, dict[int, int]] = {uid: {} for uid in user_ids}
     if user_ids:
         rating_rows = db.execute(
-            select(Rating.user_id, Rating.project_id, Rating.rating)
-            .where(Rating.user_id.in_(user_ids))
+            select(Rating.user_id, Rating.project_id, Rating.rating).where(
+                Rating.user_id.in_(user_ids)
+            )
         ).all()
         for user_id, project_id, rating in rating_rows:
             if project_id in project_by_id:
@@ -831,7 +1081,9 @@ def _build_assignment_preview(
         key=lambda pid: (project_demand.get(pid, 0), -pid),
         reverse=True,
     )
-    selected_project_ids = sorted_project_ids[: min(len(sorted_project_ids), needed_projects)]
+    selected_project_ids = sorted_project_ids[
+        : min(len(sorted_project_ids), needed_projects)
+    ]
     if not selected_project_ids:
         selected_project_ids = [projects[0].project_id]
 
@@ -845,10 +1097,14 @@ def _build_assignment_preview(
             continue
         seen_preassigned_user_ids.add(user_id)
         if user_id not in available_user_ids:
-            warnings.append(f"Preassignment user {user_id} is out of scope and was ignored.")
+            warnings.append(
+                f"Preassignment user {user_id} is out of scope and was ignored."
+            )
             continue
         if project_id not in available_project_ids:
-            warnings.append(f"Preassignment project {project_id} is out of scope and was ignored.")
+            warnings.append(
+                f"Preassignment project {project_id} is out of scope and was ignored."
+            )
             continue
         normalized_preassigned.append((user_id, project_id))
         if project_id not in selected_project_ids:
@@ -856,13 +1112,13 @@ def _build_assignment_preview(
 
     capacity_by_project = {pid: max_team_size for pid in selected_project_ids}
     while sum(capacity_by_project.values()) < len(students):
-        best_project_id = max(selected_project_ids, key=lambda pid: project_demand.get(pid, 0))
+        best_project_id = max(
+            selected_project_ids, key=lambda pid: project_demand.get(pid, 0)
+        )
         capacity_by_project[best_project_id] += max_team_size
 
     student_email_to_user_id = {
-        (row.email or "").strip().lower(): row.id
-        for row in students
-        if row.email
+        (row.email or "").strip().lower(): row.id for row in students if row.email
     }
     student_ids = [row.id for row in students]
     student_rows = []
@@ -885,7 +1141,11 @@ def _build_assignment_preview(
     pref_rows = []
     if user_ids:
         pref_rows = db.execute(
-            select(TeammatePreference.user_id, TeammatePreference.student_id, TeammatePreference.preference)
+            select(
+                TeammatePreference.user_id,
+                TeammatePreference.student_id,
+                TeammatePreference.preference,
+            )
             .where(TeammatePreference.user_id.in_(user_ids))
             .where(TeammatePreference.student_id.is_not(None))
             .where(TeammatePreference.preference.in_(["want", "avoid"]))
@@ -912,80 +1172,26 @@ def _build_assignment_preview(
     )
     warnings.extend(integrity.warnings)
 
-    assigned_project_by_user: dict[int, int] = {}
-    user_scores: dict[int, int] = {}
-    user_assigned_rank: dict[int, int] = {}
-    preassigned_user_ids: set[int] = set()
-    users_by_project: dict[int, list[int]] = {pid: [] for pid in selected_project_ids}
-
-    for user_id, project_id in normalized_preassigned:
-        users_by_project.setdefault(project_id, [])
-        if len(users_by_project[project_id]) >= capacity_by_project.get(project_id, max_team_size):
-            capacity_by_project[project_id] = capacity_by_project.get(project_id, max_team_size) + max_team_size
-        users_by_project[project_id].append(user_id)
-        assigned_project_by_user[user_id] = project_id
-        user_scores[user_id] = 9999
-        preassigned_user_ids.add(user_id)
-        rank = ranking_map.get(user_id, {}).get(project_id)
-        if rank is not None:
-            user_assigned_rank[user_id] = int(rank)
-
-    ordered_students = sorted(
-        students,
-        key=lambda row: (
-            len(ranking_map.get(row.id, {})) == 0,
-            row.id,
-        ),
+    (
+        assigned_project_by_user,
+        user_scores,
+        user_assigned_rank,
+        preassigned_user_ids,
+        users_by_project,
+        ilp_warnings,
+    ) = _solve_assignment_ilp(
+        students=students,
+        selected_project_ids=selected_project_ids,
+        ranking_map=ranking_map,
+        rating_map=rating_map,
+        wants=wants,
+        avoids=avoids,
+        normalized_preassigned=normalized_preassigned,
+        rule=rule,
+        min_team_size=min_team_size,
+        max_team_size=max_team_size,
     )
-
-    for student in ordered_students:
-        uid = student.id
-        if uid in preassigned_user_ids:
-            continue
-        best_project_id = None
-        best_score = -10**9
-        best_rank = None
-
-        for project_id in selected_project_ids:
-            if len(users_by_project[project_id]) >= capacity_by_project[project_id]:
-                continue
-
-            rank = ranking_map.get(uid, {}).get(project_id)
-            pref_points = max(11 - rank, 0) if rank else 0
-            score = pref_points * rule.weight_project_preference
-
-            rating_value = rating_map.get(uid, {}).get(project_id, 0)
-            score += rating_value * rule.weight_project_rating
-
-            teammate_ids = users_by_project[project_id]
-            want_bonus = sum(1 for tid in teammate_ids if tid in wants.get(uid, set()))
-            avoid_hits = sum(1 for tid in teammate_ids if tid in avoids.get(uid, set()))
-
-            if rule.hard_avoid and avoid_hits > 0:
-                continue
-
-            score += want_bonus * rule.weight_mutual_want
-            score -= avoid_hits * rule.penalty_avoid
-
-            if best_project_id is None or score > best_score:
-                best_project_id = project_id
-                best_score = score
-                best_rank = rank
-
-        if best_project_id is None:
-            for project_id in selected_project_ids:
-                if len(users_by_project[project_id]) < capacity_by_project[project_id]:
-                    best_project_id = project_id
-                    best_score = 0
-                    best_rank = ranking_map.get(uid, {}).get(project_id)
-                    break
-
-        if best_project_id is not None:
-            users_by_project[best_project_id].append(uid)
-            assigned_project_by_user[uid] = best_project_id
-            user_scores[uid] = int(best_score)
-            if best_rank is not None:
-                user_assigned_rank[uid] = int(best_rank)
+    warnings.extend(ilp_warnings)
 
     user_by_id = {row.id: row for row in students}
     project_assignments: list[AssignmentPreviewProjectOut] = []
@@ -1019,7 +1225,9 @@ def _build_assignment_preview(
         project_assignments.append(
             AssignmentPreviewProjectOut(
                 project_id=project.project_id,
-                project_title=project.project_title or project_org_map.get(project.project_id) or f"Project {project.project_id}",
+                project_title=project.project_title
+                or project_org_map.get(project.project_id)
+                or f"Project {project.project_id}",
                 organization=project_org_map.get(project.project_id),
                 assigned_count=len(member_user_ids),
                 teams=teams,
@@ -1030,7 +1238,9 @@ def _build_assignment_preview(
     if unassigned_count > 0:
         warnings.append("Some students could not be assigned with current constraints.")
 
-    assigned_scores = [int(user_scores.get(uid, 0)) for uid in assigned_project_by_user.keys()]
+    assigned_scores = [
+        int(user_scores.get(uid, 0)) for uid in assigned_project_by_user.keys()
+    ]
     assigned_ranks = [
         int(user_assigned_rank[uid])
         for uid in assigned_project_by_user.keys()
@@ -1059,8 +1269,8 @@ def _build_assignment_preview(
         rule_config_id=rule.id,
         cohort_id=cohort_id,
         team_size=target_team_size,
-    min_team_size=min_team_size,
-    max_team_size=max_team_size,
+        min_team_size=min_team_size,
+        max_team_size=max_team_size,
         total_students=len(students),
         projects_considered=len(projects),
         projects_selected=len(selected_project_ids),
@@ -1092,7 +1302,9 @@ def _load_ranking_submissions(
     submitted_only: bool = True,
     include_non_students: bool = True,
 ) -> list[AdminRankingSubmissionOut]:
-    users_stmt = select(User).where(User.deleted_at.is_(None)).order_by(User.email.asc())
+    users_stmt = (
+        select(User).where(User.deleted_at.is_(None)).order_by(User.email.asc())
+    )
     if not include_non_students:
         users_stmt = users_stmt.where(User.role == "student")
     if cohort_id:
@@ -1105,7 +1317,9 @@ def _load_ranking_submissions(
     ranking_stmt = select(Ranking).where(Ranking.user_id.in_(user_ids))
     if submitted_only:
         ranking_stmt = ranking_stmt.where(Ranking.is_submitted.is_(True))
-    ranking_stmt = ranking_stmt.order_by(Ranking.submitted_at.desc().nullslast(), Ranking.id.asc())
+    ranking_stmt = ranking_stmt.order_by(
+        Ranking.submitted_at.desc().nullslast(), Ranking.id.asc()
+    )
     rankings = db.execute(ranking_stmt).scalars().all()
     if not rankings:
         return []
@@ -1223,7 +1437,9 @@ def _project_org_map(db: Session, project_ids: list[int]) -> dict[int, str]:
     return {project_id: name for project_id, name in rows if name}
 
 
-def _project_company_map(db: Session, project_ids: list[int]) -> dict[int, tuple[int, str]]:
+def _project_company_map(
+    db: Session, project_ids: list[int]
+) -> dict[int, tuple[int, str]]:
     if not project_ids:
         return {}
     rows = db.execute(
@@ -1235,10 +1451,7 @@ def _project_company_map(db: Session, project_ids: list[int]) -> dict[int, tuple
         .join(Company, Company.id == ProjectCompany.company_id)
         .where(ProjectCompany.project_id.in_(project_ids))
     ).all()
-    return {
-        project_id: (company_id, name)
-        for project_id, company_id, name in rows
-    }
+    return {project_id: (company_id, name) for project_id, company_id, name in rows}
 
 
 @router.get("/cohorts", response_model=List[CohortOut])
@@ -1267,7 +1480,9 @@ def create_cohort(
     _: User = Depends(require_admin),
 ):
     _ensure_cohort_schema(db)
-    existing = db.execute(select(Cohort).where(Cohort.name == payload.name)).scalars().first()
+    existing = (
+        db.execute(select(Cohort).where(Cohort.name == payload.name)).scalars().first()
+    )
     if existing:
         return CohortOut(
             id=existing.id,
@@ -1343,7 +1558,9 @@ def update_cohort(
     )
 
 
-@router.post("/cohorts/{cohort_id}/students/upload-csv", response_model=CohortStudentUploadOut)
+@router.post(
+    "/cohorts/{cohort_id}/students/upload-csv", response_model=CohortStudentUploadOut
+)
 async def upload_students_csv(
     cohort_id: int,
     file: UploadFile = File(...),
@@ -1363,7 +1580,9 @@ async def upload_students_csv(
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded") from exc
+        raise HTTPException(
+            status_code=400, detail="CSV must be UTF-8 encoded"
+        ) from exc
 
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
@@ -1387,7 +1606,9 @@ async def upload_students_csv(
 
     for row_index, row in enumerate(reader, start=2):
         rows_processed += 1
-        full_name = (row.get("full_name") or row.get("Full_Name") or row.get("name") or "").strip()
+        full_name = (
+            row.get("full_name") or row.get("Full_Name") or row.get("name") or ""
+        ).strip()
         email = (row.get("email") or row.get("Email") or "").strip().lower()
         program = (row.get("program") or row.get("Program") or "").strip()
 
@@ -1416,7 +1637,9 @@ async def upload_students_csv(
 
         db.flush()
 
-        student = db.execute(select(Student).where(Student.email == email)).scalars().first()
+        student = (
+            db.execute(select(Student).where(Student.email == email)).scalars().first()
+        )
         if student:
             student.full_name = full_name
             student.program = program or student.program
@@ -1518,7 +1741,9 @@ def list_users(
 ):
     rows = (
         db.execute(
-            select(User).where(User.deleted_at.is_(None)).order_by(User.created_at.desc())
+            select(User)
+            .where(User.deleted_at.is_(None))
+            .order_by(User.created_at.desc())
         )
         .scalars()
         .all()
@@ -1537,17 +1762,20 @@ def create_user(
         raise HTTPException(status_code=400, detail="Invalid role")
 
     existing = (
-        db.execute(select(User).where(User.email == payload.email))
-        .scalars()
-        .first()
+        db.execute(select(User).where(User.email == payload.email)).scalars().first()
     )
     if existing:
         raise HTTPException(status_code=400, detail="Email is already registered")
 
     _cohort_or_404(db, payload.cohort_id)
     next_profile_image_url = (payload.profile_image_url or "").strip()
-    if next_profile_image_url and not next_profile_image_url.lower().startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Profile image URL must start with http:// or https://")
+    if next_profile_image_url and not next_profile_image_url.lower().startswith(
+        ("http://", "https://")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Profile image URL must start with http:// or https://",
+        )
 
     user = User(
         email=payload.email,
@@ -1581,9 +1809,9 @@ def create_user(
 
     return _serialize_admin_user(
         user,
-        db.execute(
-            select(FacultyProfile).where(FacultyProfile.user_id == user.id)
-        ).scalars().first(),
+        db.execute(select(FacultyProfile).where(FacultyProfile.user_id == user.id))
+        .scalars()
+        .first(),
     )
 
 
@@ -1611,8 +1839,13 @@ def update_user(
 
     _cohort_or_404(db, payload.cohort_id)
     next_profile_image_url = (payload.profile_image_url or "").strip()
-    if next_profile_image_url and not next_profile_image_url.lower().startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Profile image URL must start with http:// or https://")
+    if next_profile_image_url and not next_profile_image_url.lower().startswith(
+        ("http://", "https://")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Profile image URL must start with http:// or https://",
+        )
 
     user.email = payload.email
     user.display_name = payload.display_name
@@ -1644,9 +1877,9 @@ def update_user(
 
     return _serialize_admin_user(
         user,
-        db.execute(
-            select(FacultyProfile).where(FacultyProfile.user_id == user.id)
-        ).scalars().first(),
+        db.execute(select(FacultyProfile).where(FacultyProfile.user_id == user.id))
+        .scalars()
+        .first(),
     )
 
 
@@ -1729,7 +1962,9 @@ def create_project(
     company = _company_or_404(db, payload.company_id)
     if not company:
         raise HTTPException(status_code=400, detail="company_id is required")
-    slug = (payload.slug or "").strip() or _slugify(payload.project_title or company.name)
+    slug = (payload.slug or "").strip() or _slugify(
+        payload.project_title or company.name
+    )
     if not slug:
         raise HTTPException(status_code=400, detail="Slug is required")
     slug_exists = (
@@ -1805,7 +2040,9 @@ def update_project(
     _ensure_company_schema(db)
     _ensure_project_status_schema(db)
     row = (
-        db.execute(select(ClientIntakeForm).where(ClientIntakeForm.project_id == project_id))
+        db.execute(
+            select(ClientIntakeForm).where(ClientIntakeForm.project_id == project_id)
+        )
         .scalars()
         .first()
     )
@@ -1816,7 +2053,9 @@ def update_project(
     company = _company_or_404(db, payload.company_id)
     if not company:
         raise HTTPException(status_code=400, detail="company_id is required")
-    slug = (payload.slug or "").strip() or _slugify(payload.project_title or company.name)
+    slug = (payload.slug or "").strip() or _slugify(
+        payload.project_title or company.name
+    )
     if not slug:
         raise HTTPException(status_code=400, detail="Slug is required")
     slug_exists = (
@@ -1845,7 +2084,9 @@ def update_project(
     _apply_project_status_transition(row, payload.project_status)
 
     existing_link = (
-        db.execute(select(ProjectCompany).where(ProjectCompany.project_id == row.project_id))
+        db.execute(
+            select(ProjectCompany).where(ProjectCompany.project_id == row.project_id)
+        )
         .scalars()
         .first()
     )
@@ -1899,7 +2140,9 @@ def delete_project(
     current_user: User = Depends(require_admin),
 ):
     row = (
-        db.execute(select(ClientIntakeForm).where(ClientIntakeForm.project_id == project_id))
+        db.execute(
+            select(ClientIntakeForm).where(ClientIntakeForm.project_id == project_id)
+        )
         .scalars()
         .first()
     )
@@ -2003,7 +2246,9 @@ def update_company(
         raise HTTPException(status_code=400, detail="Company name is required")
 
     duplicate = (
-        db.execute(select(Company).where(Company.name == name, Company.id != company_id))
+        db.execute(
+            select(Company).where(Company.name == name, Company.id != company_id)
+        )
         .scalars()
         .first()
     )
@@ -2108,23 +2353,39 @@ def get_active_assignment_rule(
 
     row = None
     if cohort_id is not None:
-        row = db.execute(
-            select(AssignmentRuleConfig)
-            .where(AssignmentRuleConfig.cohort_id == cohort_id)
-            .where(AssignmentRuleConfig.is_active.is_(True))
-            .order_by(AssignmentRuleConfig.updated_at.desc(), AssignmentRuleConfig.id.desc())
-        ).scalars().first()
+        row = (
+            db.execute(
+                select(AssignmentRuleConfig)
+                .where(AssignmentRuleConfig.cohort_id == cohort_id)
+                .where(AssignmentRuleConfig.is_active.is_(True))
+                .order_by(
+                    AssignmentRuleConfig.updated_at.desc(),
+                    AssignmentRuleConfig.id.desc(),
+                )
+            )
+            .scalars()
+            .first()
+        )
 
     if row is None:
-        row = db.execute(
-            select(AssignmentRuleConfig)
-            .where(AssignmentRuleConfig.cohort_id.is_(None))
-            .where(AssignmentRuleConfig.is_active.is_(True))
-            .order_by(AssignmentRuleConfig.updated_at.desc(), AssignmentRuleConfig.id.desc())
-        ).scalars().first()
+        row = (
+            db.execute(
+                select(AssignmentRuleConfig)
+                .where(AssignmentRuleConfig.cohort_id.is_(None))
+                .where(AssignmentRuleConfig.is_active.is_(True))
+                .order_by(
+                    AssignmentRuleConfig.updated_at.desc(),
+                    AssignmentRuleConfig.id.desc(),
+                )
+            )
+            .scalars()
+            .first()
+        )
 
     if row is None:
-        raise HTTPException(status_code=404, detail="No active assignment rule config found")
+        raise HTTPException(
+            status_code=404, detail="No active assignment rule config found"
+        )
 
     return _serialize_rule_config(row)
 
@@ -2170,7 +2431,11 @@ def create_assignment_rule(
         action="create",
         target_type="assignment_rule_config",
         target_id=str(row.id),
-        details={"name": row.name, "cohort_id": row.cohort_id, "is_active": row.is_active},
+        details={
+            "name": row.name,
+            "cohort_id": row.cohort_id,
+            "is_active": row.is_active,
+        },
     )
     db.commit()
     return _serialize_rule_config(row)
@@ -2204,7 +2469,9 @@ def update_assignment_rule(
         row.team_size = payload.team_size
     if "enforce_same_cohort" in provided_fields:
         if payload.enforce_same_cohort is None:
-            raise HTTPException(status_code=400, detail="enforce_same_cohort cannot be null")
+            raise HTTPException(
+                status_code=400, detail="enforce_same_cohort cannot be null"
+            )
         row.enforce_same_cohort = payload.enforce_same_cohort
     if "hard_avoid" in provided_fields:
         if payload.hard_avoid is None:
@@ -2212,19 +2479,27 @@ def update_assignment_rule(
         row.hard_avoid = payload.hard_avoid
     if "max_low_preference_per_team" in provided_fields:
         if payload.max_low_preference_per_team is None:
-            raise HTTPException(status_code=400, detail="max_low_preference_per_team cannot be null")
+            raise HTTPException(
+                status_code=400, detail="max_low_preference_per_team cannot be null"
+            )
         row.max_low_preference_per_team = payload.max_low_preference_per_team
     if "weight_project_preference" in provided_fields:
         if payload.weight_project_preference is None:
-            raise HTTPException(status_code=400, detail="weight_project_preference cannot be null")
+            raise HTTPException(
+                status_code=400, detail="weight_project_preference cannot be null"
+            )
         row.weight_project_preference = payload.weight_project_preference
     if "weight_project_rating" in provided_fields:
         if payload.weight_project_rating is None:
-            raise HTTPException(status_code=400, detail="weight_project_rating cannot be null")
+            raise HTTPException(
+                status_code=400, detail="weight_project_rating cannot be null"
+            )
         row.weight_project_rating = payload.weight_project_rating
     if "weight_mutual_want" in provided_fields:
         if payload.weight_mutual_want is None:
-            raise HTTPException(status_code=400, detail="weight_mutual_want cannot be null")
+            raise HTTPException(
+                status_code=400, detail="weight_mutual_want cannot be null"
+            )
         row.weight_mutual_want = payload.weight_mutual_want
     if "penalty_avoid" in provided_fields:
         if payload.penalty_avoid is None:
@@ -2253,13 +2528,19 @@ def update_assignment_rule(
         action="update",
         target_type="assignment_rule_config",
         target_id=str(row.id),
-        details={"name": row.name, "cohort_id": row.cohort_id, "is_active": row.is_active},
+        details={
+            "name": row.name,
+            "cohort_id": row.cohort_id,
+            "is_active": row.is_active,
+        },
     )
     db.commit()
     return _serialize_rule_config(row)
 
 
-@router.post("/assignment-rules/{config_id}/activate", response_model=AssignmentRuleConfigOut)
+@router.post(
+    "/assignment-rules/{config_id}/activate", response_model=AssignmentRuleConfigOut
+)
 def activate_assignment_rule(
     config_id: int,
     db: Session = Depends(get_db),
@@ -2288,7 +2569,9 @@ def activate_assignment_rule(
     return _serialize_rule_config(row)
 
 
-@router.post("/assignment-rules/{config_id}/preview", response_model=AssignmentPreviewOut)
+@router.post(
+    "/assignment-rules/{config_id}/preview", response_model=AssignmentPreviewOut
+)
 def preview_assignment_rule(
     config_id: int,
     payload: Optional[AssignmentPreviewRequestIn] = None,
@@ -2365,7 +2648,10 @@ def preview_assignment_rule(
     return preview
 
 
-@router.get("/assignment-rules/{config_id}/preview-runs", response_model=List[AssignmentPreviewRunOut])
+@router.get(
+    "/assignment-rules/{config_id}/preview-runs",
+    response_model=List[AssignmentPreviewRunOut],
+)
 def list_assignment_preview_runs(
     config_id: int,
     limit: int = Query(default=20, ge=1, le=100),
@@ -2399,7 +2685,9 @@ def list_assignment_preview_runs(
     return [_serialize_preview_run_row(row) for row in rows]
 
 
-@router.get("/assignment-rules/preview-runs/{run_id}", response_model=AssignmentPreviewOut)
+@router.get(
+    "/assignment-rules/preview-runs/{run_id}", response_model=AssignmentPreviewOut
+)
 def get_assignment_preview_run(
     run_id: int,
     db: Session = Depends(get_db),
@@ -2441,7 +2729,9 @@ def save_assignment_run(
 
     preview = payload.preview
     if int(preview.rule_config_id) != int(config_id):
-        raise HTTPException(status_code=400, detail="Preview rule_config_id does not match config")
+        raise HTTPException(
+            status_code=400, detail="Preview rule_config_id does not match config"
+        )
 
     run_row = db.execute(
         text(
@@ -2505,7 +2795,10 @@ def save_assignment_run(
     return _serialize_saved_run_row(run_row)
 
 
-@router.get("/assignment-rules/{config_id}/saved-runs", response_model=List[AssignmentSavedRunOut])
+@router.get(
+    "/assignment-rules/{config_id}/saved-runs",
+    response_model=List[AssignmentSavedRunOut],
+)
 def list_saved_assignment_runs(
     config_id: int,
     limit: int = Query(default=20, ge=1, le=100),
@@ -2599,7 +2892,9 @@ def list_partner_preferences(
         if payload_ciphertext:
             try:
                 payload = decrypt_teammate_choice(payload_ciphertext)
-                sid = int(payload.get("student_id")) if payload.get("student_id") else sid
+                sid = (
+                    int(payload.get("student_id")) if payload.get("student_id") else sid
+                )
                 pref_value = payload.get("preference") or pref_value
                 raw_comment = payload.get("comment") or payload.get("avoid_reason")
                 comment = str(raw_comment).strip() if raw_comment else None
@@ -2616,13 +2911,17 @@ def list_partner_preferences(
 
     student_map: dict[int, Student] = {}
     if student_ids:
-        student_rows = db.execute(
-            select(Student).where(Student.id.in_(list(student_ids)))
-        ).scalars().all()
+        student_rows = (
+            db.execute(select(Student).where(Student.id.in_(list(student_ids))))
+            .scalars()
+            .all()
+        )
         student_map = {row.id: row for row in student_rows}
 
     want_by_user: dict[int, list[AdminPartnerChoiceOut]] = {uid: [] for uid in user_ids}
-    avoid_by_user: dict[int, list[AdminPartnerChoiceOut]] = {uid: [] for uid in user_ids}
+    avoid_by_user: dict[int, list[AdminPartnerChoiceOut]] = {
+        uid: [] for uid in user_ids
+    }
 
     for uid, sid, pref_value, comment in normalized_rows:
         student = student_map.get(sid)
@@ -2672,14 +2971,18 @@ def list_partner_preferences(
     return out
 
 
-@router.get("/project-comments/unresolved-count", response_model=AdminProjectCommentCountOut)
+@router.get(
+    "/project-comments/unresolved-count", response_model=AdminProjectCommentCountOut
+)
 def get_unresolved_project_comment_count(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     _ensure_project_comment_schema(db)
     count = db.execute(
-        select(func.count(ProjectComment.id)).where(ProjectComment.is_resolved.is_(False))
+        select(func.count(ProjectComment.id)).where(
+            ProjectComment.is_resolved.is_(False)
+        )
     ).scalar_one()
     return AdminProjectCommentCountOut(unresolved_count=int(count or 0))
 
@@ -2701,7 +3004,9 @@ def list_project_comments(
             User.email,
             User.display_name,
         )
-        .join(ClientIntakeForm, ClientIntakeForm.project_id == ProjectComment.project_id)
+        .join(
+            ClientIntakeForm, ClientIntakeForm.project_id == ProjectComment.project_id
+        )
         .join(User, User.id == ProjectComment.user_id)
         .where(ClientIntakeForm.deleted_at.is_(None))
         .order_by(ProjectComment.created_at.desc(), ProjectComment.id.desc())
@@ -2741,7 +3046,11 @@ def update_project_comment_status(
 ):
     _ensure_project_comment_schema(db)
 
-    row = db.execute(select(ProjectComment).where(ProjectComment.id == comment_id)).scalars().first()
+    row = (
+        db.execute(select(ProjectComment).where(ProjectComment.id == comment_id))
+        .scalars()
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Project comment not found")
 
@@ -2757,7 +3066,9 @@ def update_project_comment_status(
     db.commit()
 
     project_row = db.execute(
-        select(ClientIntakeForm.project_title).where(ClientIntakeForm.project_id == row.project_id)
+        select(ClientIntakeForm.project_title).where(
+            ClientIntakeForm.project_id == row.project_id
+        )
     ).first()
     user_row = db.execute(
         select(User.email, User.display_name).where(User.id == row.user_id)
@@ -2812,9 +3123,7 @@ def export_partner_preferences(
     )
 
     chooser_by_email = {
-        (row.email or "").strip().lower(): row.user_id
-        for row in rows
-        if row.email
+        (row.email or "").strip().lower(): row.user_id for row in rows if row.email
     }
     wants_map: dict[int, set[int]] = {}
     avoids_map: dict[int, set[int]] = {}
@@ -2859,11 +3168,17 @@ def export_partner_preferences(
                 is_mutual_want = False
                 is_conflict = False
                 if target_uid is not None:
-                    if choice_type == "want" and row.user_id in wants_map.get(target_uid, set()):
+                    if choice_type == "want" and row.user_id in wants_map.get(
+                        target_uid, set()
+                    ):
                         is_mutual_want = True
-                    if choice_type == "want" and row.user_id in avoids_map.get(target_uid, set()):
+                    if choice_type == "want" and row.user_id in avoids_map.get(
+                        target_uid, set()
+                    ):
                         is_conflict = True
-                    if choice_type == "avoid" and row.user_id in wants_map.get(target_uid, set()):
+                    if choice_type == "avoid" and row.user_id in wants_map.get(
+                        target_uid, set()
+                    ):
                         is_conflict = True
 
                 writer.writerow(
@@ -2910,7 +3225,9 @@ def reopen_ranking_submission(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    row = db.execute(select(Ranking).where(Ranking.user_id == user_id)).scalars().first()
+    row = (
+        db.execute(select(Ranking).where(Ranking.user_id == user_id)).scalars().first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Ranking not found")
 
@@ -2973,7 +3290,11 @@ def export_ranking_submissions(
                     submission.display_name or "",
                     submission.cohort_id or "",
                     submission.is_submitted,
-                    submission.submitted_at.isoformat() if submission.submitted_at else "",
+                    (
+                        submission.submitted_at.isoformat()
+                        if submission.submitted_at
+                        else ""
+                    ),
                     "",
                     "",
                     "",
@@ -2991,7 +3312,11 @@ def export_ranking_submissions(
                     submission.display_name or "",
                     submission.cohort_id or "",
                     submission.is_submitted,
-                    submission.submitted_at.isoformat() if submission.submitted_at else "",
+                    (
+                        submission.submitted_at.isoformat()
+                        if submission.submitted_at
+                        else ""
+                    ),
                     item.rank,
                     item.project_id,
                     item.slug or "",
