@@ -100,20 +100,20 @@ jobs:
             docker-compose down
             docker-compose build
 
-            SCHEMA_STATE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "python - <<'PY'
-            from sqlalchemy import create_engine, text
-            import os
-
-            engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
-            with engine.connect() as conn:
-              has_alembic = bool(conn.execute(text("select to_regclass('public.alembic_version') is not null")).scalar())
-              has_projects = bool(conn.execute(text("select to_regclass('public.projects') is not null")).scalar())
-              has_client = bool(conn.execute(text("select to_regclass('public.client_intake_forms') is not null")).scalar())
-              rev = ""
-              if has_alembic:
-                rev = conn.execute(text("select coalesce((select version_num from alembic_version limit 1), '')")).scalar() or ""
-            print(f"{str(has_alembic).lower()}|{str(has_projects).lower()}|{str(has_client).lower()}|{rev}")
-            PY")
+            cat > /tmp/_schema_check.py << 'PYEOF'
+from sqlalchemy import create_engine, text
+import os
+engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+with engine.connect() as conn:
+  has_alembic = bool(conn.execute(text("select to_regclass('public.alembic_version') is not null")).scalar())
+  has_projects = bool(conn.execute(text("select to_regclass('public.projects') is not null")).scalar())
+  has_client = bool(conn.execute(text("select to_regclass('public.client_intake_forms') is not null")).scalar())
+  rev = ""
+  if has_alembic:
+    rev = conn.execute(text("select coalesce((select version_num from alembic_version limit 1), '')")).scalar() or ""
+print(f"{str(has_alembic).lower()}|{str(has_projects).lower()}|{str(has_client).lower()}|{rev}")
+PYEOF
+            SCHEMA_STATE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" -v /tmp/_schema_check.py:/tmp/_schema_check.py api python /tmp/_schema_check.py)
 
             HAS_ALEMBIC_VERSION=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $1}')
             HAS_PROJECTS=$(echo "$SCHEMA_STATE" | awk -F'|' '{print $2}')
@@ -150,13 +150,14 @@ jobs:
             docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "alembic -c alembic.ini current"
 
             for REQUIRED_TABLE in projects companies project_comments assignment_rule_configs assignment_preview_runs assignment_saved_runs; do
-                HAS_TABLE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" api sh -lc "python - <<'PY'
-                from sqlalchemy import create_engine, text
-                import os
-                engine = create_engine(os.environ['DATABASE_URL'], pool_pre_ping=True)
-                with engine.connect() as conn:
-                  print(str(bool(conn.execute(text(\"select to_regclass('public.${REQUIRED_TABLE}') is not null\")).scalar())).lower())
-                PY")
+              cat > /tmp/_table_check.py << PYEOF
+from sqlalchemy import create_engine, text
+import os
+engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+with engine.connect() as conn:
+  print(str(bool(conn.execute(text("select to_regclass('public.${REQUIRED_TABLE}') is not null")).scalar())).lower())
+PYEOF
+              HAS_TABLE=$(docker-compose run --rm -e DATABASE_URL="$DATABASE_URL" -v /tmp/_table_check.py:/tmp/_table_check.py api python /tmp/_table_check.py)
               if [ "$HAS_TABLE" != "true" ]; then
                 echo "Missing required table after migration: ${REQUIRED_TABLE}"
                 exit 1
