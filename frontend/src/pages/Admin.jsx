@@ -36,10 +36,9 @@ import {
   adminUpdateProjectCommentStatus,
   adminUpdateProject,
 } from '../api'
-import { clearAuth, getUser } from '../auth'
-import midsLogo from '../assets/mids-logo-white-bg.svg'
-import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
-import CartNavIcon from '../components/CartNavIcon'
+import { getUser } from '../auth'
+import AppHeader from '../components/AppHeader'
+import { DEFAULT_PROFILE_IMAGE_URL, resolveProfileImageUrl } from '../profileImage'
 
 const roleOptions = ['student', 'admin', 'faculty', 'client']
 
@@ -437,7 +436,6 @@ export default function AdminPage() {
 
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
   const [commentBellOpen, setCommentBellOpen] = useState(false)
   const [unresolvedCommentCount, setUnresolvedCommentCount] = useState(0)
   const [recentProjectComments, setRecentProjectComments] = useState([])
@@ -446,8 +444,6 @@ export default function AdminPage() {
   const [projectDetailOpen, setProjectDetailOpen] = useState(false)
   const [projectDetailCommentsOpen, setProjectDetailCommentsOpen] = useState(false)
   const [commentActionsLoading, setCommentActionsLoading] = useState(false)
-  const [accountOpen, setAccountOpen] = useState(false)
-  const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
 
   const menuItems = ['Projects', 'Partners', 'Admin']
   const adminTabs = [
@@ -2192,233 +2188,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
-        <div className="card p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative md:hidden">
-              <button
-                type="button"
-                className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
-                aria-label="Open menu"
-                onClick={() => setMenuOpen((v) => !v)}
-              >
-                ☰
-              </button>
-              {menuOpen ? (
-                <div className="absolute left-0 top-full mt-2 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
-                  <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
-                    Sections
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    {menuItems.map((label) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                        onClick={() => navigateSection(label)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="inline-flex"
-              aria-label="Go to projects"
-              onClick={() => navigate('/projects')}
-            >
-              <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
-            </button>
-            <div className="hidden md:flex items-center gap-2 md:ml-3 md:pl-3 md:border-l md:border-slate-200">
-              {menuItems.map((label) => {
-                const isActive = label === 'Admin'
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    className={
-                      isActive
-                        ? 'px-3 py-2 rounded-card text-sm bg-duke-900 text-white'
-                        : 'px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100'
-                    }
-                    onClick={() => navigateSection(label)}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-xs uppercase tracking-wide text-slate-400">Admin</div>
-              <div className="text-lg font-heading text-duke-900">Control Center</div>
-            </div>
-            <CartNavIcon />
-            <div className="relative">
-              <button
-                type="button"
-                className="relative h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-700"
-                aria-label="Project comment notifications"
-                title="Project comment notifications"
-                onClick={() => {
-                  setCommentBellOpen((v) => !v)
-                  setAccountOpen(false)
-                }}
-              >
-                <svg
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="mx-auto h-5 w-5"
-                >
-                  <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
-                  <path d="M9 17a3 3 0 0 0 6 0" />
-                </svg>
-                {unresolvedCommentCount > 0 ? (
-                  <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
-                    {unresolvedCommentCount > 99 ? '99+' : unresolvedCommentCount}
-                  </span>
-                ) : null}
-              </button>
-              {commentBellOpen ? (
-                <div className="absolute right-0 top-full mt-2 w-96 max-w-[92vw] rounded-card border border-slate-200 bg-white shadow-sm p-3 z-20">
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-800">Student Project Comments</div>
-                      <div className="text-xs text-slate-500">
-                        {unresolvedCommentCount > 0
-                          ? `${unresolvedCommentCount} unresolved`
-                          : 'No unresolved comments'}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-secondary text-xs"
-                      onClick={() => refreshProjectCommentNotifications()}
-                      disabled={commentActionsLoading}
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                  <div className="mt-3 max-h-80 overflow-auto space-y-2">
-                    {recentProjectComments.length ? (
-                      recentProjectComments.map((item) => {
-                        const commentId = item?.id
-                        const isResolved = Boolean(item?.is_resolved)
-                        const created = item?.created_at ? new Date(item.created_at) : null
-                        const createdText = created && !Number.isNaN(created.getTime())
-                          ? created.toLocaleString()
-                          : 'Unknown time'
-                        return (
-                          <div key={commentId} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="text-xs text-slate-500">
-                                <span className="font-semibold text-slate-700">
-                                  {item?.student_display_name || item?.student_email || 'Student'}
-                                </span>
-                                {' on '}
-                                <span className="font-semibold text-slate-700">
-                                  {item?.project_title || `Project #${item?.project_id || ''}`}
-                                </span>
-                              </div>
-                              <span
-                                className={
-                                  isResolved
-                                    ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
-                                    : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
-                                }
-                              >
-                                {isResolved ? 'Resolved' : 'Unresolved'}
-                              </span>
-                            </div>
-                            <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item?.comment || ''}</div>
-                            <div className="mt-2 flex items-center justify-between gap-2">
-                              <div className="text-[11px] text-slate-500">{createdText}</div>
-                              <button
-                                type="button"
-                                className="btn-secondary text-xs"
-                                disabled={commentActionsLoading}
-                                onClick={() => handleUpdateProjectComment(commentId, !isResolved)}
-                              >
-                                {isResolved ? 'Mark unresolved' : 'Mark resolved'}
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })
-                    ) : (
-                      <div className="text-sm text-slate-500">No project comments yet.</div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <div className="relative">
-              <button
-                type="button"
-                className="h-10 w-10 rounded-full bg-duke-900 text-white text-sm font-semibold"
-                aria-label="Account menu"
-                title="Account menu"
-                onClick={() => {
-                  setAccountOpen((v) => !v)
-                  setCommentBellOpen(false)
-                }}
-              >
-                {!accountAvatarFailed ? (
-                  <img
-                    src={resolveProfileImageUrl({
-                      displayName: user?.display_name,
-                      email: user?.email,
-                      profileImageUrl: user?.profile_image_url,
-                    })}
-                    alt="Profile"
-                    className="h-full w-full rounded-full object-cover"
-                    onError={(event) => {
-                      if (event.currentTarget.src !== DEFAULT_PROFILE_IMAGE_URL) {
-                        event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
-                        return
-                      }
-                      setAccountAvatarFailed(true)
-                    }}
-                  />
-                ) : (
-                  initialsForPerson({ displayName: user?.display_name, email: user?.email })
-                )}
-              </button>
-              {accountOpen ? (
-                <div className="absolute right-0 top-full mt-2 w-44 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-20">
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                    onClick={() => {
-                      setAccountOpen(false)
-                      navigate('/profile')
-                    }}
-                  >
-                    Profile
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-card text-sm text-red-700 hover:bg-red-50"
-                    onClick={onSignOut}
-                  >
-                    Sign out
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          </div>
-        </div>
+        <AppHeader />
 
         {error ? (
           <div className="card p-4 text-sm text-red-700 border-red-200 bg-red-50">{error}</div>
@@ -2431,10 +2201,113 @@ export default function AdminPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[270px_1fr] gap-6 items-start">
           <aside className="card p-4 xl:sticky xl:top-6 space-y-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-slate-400">Admin Workspace</div>
-              <div className="text-xl font-heading text-duke-900 mt-1">{activeTabMeta.label}</div>
-              <div className="text-sm text-slate-500 mt-1">{activeTabMeta.hint}</div>
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-slate-400">Admin Workspace</div>
+                <div className="text-xl font-heading text-duke-900 mt-1">{activeTabMeta.label}</div>
+                <div className="text-sm text-slate-500 mt-1">{activeTabMeta.hint}</div>
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                  aria-label="Project comment notifications"
+                  title="Project comment notifications"
+                  onClick={() => setCommentBellOpen((v) => !v)}
+                >
+                  <svg
+                    aria-hidden="true"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5"
+                  >
+                    <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                    <path d="M9 17a3 3 0 0 0 6 0" />
+                  </svg>
+                  {unresolvedCommentCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 flex min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white shadow-sm ring-2 ring-white">
+                      {unresolvedCommentCount > 99 ? '99+' : unresolvedCommentCount}
+                    </span>
+                  ) : null}
+                </button>
+                {commentBellOpen ? (
+                  <div className="absolute left-0 lg:left-auto lg:-right-4 top-full mt-2 w-[calc(100vw-2rem)] lg:w-96 rounded-card border border-slate-200 bg-white shadow-xl p-3 z-30 transform max-lg:-translate-x-[calc(100%-2.25rem)]">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">Student Project Comments</div>
+                        <div className="text-xs text-slate-500">
+                          {unresolvedCommentCount > 0
+                            ? `${unresolvedCommentCount} unresolved`
+                            : 'No unresolved comments'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary text-xs"
+                        onClick={() => refreshProjectCommentNotifications()}
+                        disabled={commentActionsLoading}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <div className="mt-3 max-h-80 overflow-auto space-y-2">
+                      {recentProjectComments.length ? (
+                        recentProjectComments.map((item) => {
+                          const commentId = item?.id
+                          const isResolved = Boolean(item?.is_resolved)
+                          const created = item?.created_at ? new Date(item.created_at) : null
+                          const createdText = created && !Number.isNaN(created.getTime())
+                            ? created.toLocaleString()
+                            : 'Unknown time'
+                          return (
+                            <div key={commentId} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="text-xs text-slate-500">
+                                  <span className="font-semibold text-slate-700">
+                                    {item?.student_display_name || item?.student_email || 'Student'}
+                                  </span>
+                                  {' on '}
+                                  <span className="font-semibold text-slate-700">
+                                    {item?.project_title || `Project #${item?.project_id || ''}`}
+                                  </span>
+                                </div>
+                                <span
+                                  className={
+                                    isResolved
+                                      ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                                      : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                                  }
+                                >
+                                  {isResolved ? 'Resolved' : 'Unresolved'}
+                                </span>
+                              </div>
+                              <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item?.comment || ''}</div>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                <div className="text-[11px] text-slate-500">{createdText}</div>
+                                <button
+                                  type="button"
+                                  className="btn-secondary text-xs"
+                                  disabled={commentActionsLoading}
+                                  onClick={() => handleUpdateProjectComment(commentId, !isResolved)}
+                                >
+                                  {isResolved ? 'Mark unresolved' : 'Mark resolved'}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="text-sm text-slate-500">No project comments yet.</div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -2860,12 +2733,7 @@ export default function AdminPage() {
                     ) : null}
                   </div>
 
-                  <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-semibold text-slate-800">Project Summary</div>
-                    <div className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">
-                      {selectedAdminProject?.project_summary || 'No summary provided.'}
-                    </div>
-                  </div>
+
                 </aside>
               </div>
             ) : null}

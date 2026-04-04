@@ -240,7 +240,7 @@ export default function CartDrawer() {
                                 ref={providedDraggable.innerRef}
                                 {...providedDraggable.draggableProps}
                                 {...providedDraggable.dragHandleProps}
-                                className={`rounded-lg border border-slate-200 px-3 py-2 bg-slate-50 flex items-start justify-between gap-2 ${snapshotDraggable.isDragging ? 'shadow-lg ring-2 ring-blue-200' : ''}`}
+                                className={`rounded-lg border border-slate-200 px-3 py-2 bg-slate-50 flex flex-col sm:flex-row sm:items-start justify-between gap-3 ${snapshotDraggable.isDragging ? 'shadow-lg ring-2 ring-blue-200' : ''}`}
                                 style={providedDraggable.draggableProps.style}
                                 role="button"
                                 tabIndex={0}
@@ -259,10 +259,10 @@ export default function CartDrawer() {
                                   <RatingPreview value={getRatingValue(item.id)} />
                                 </div>
                                 {!rankingsLocked ? (
-                                  <div className="flex items-center gap-1">
-                                    <button type="button" className="btn-secondary !px-2 !py-1" onClick={(event) => { event.stopPropagation(); moveRank(index, -1) }} disabled={index === 0 || saving}>↑</button>
-                                    <button type="button" className="btn-secondary !px-2 !py-1" onClick={(event) => { event.stopPropagation(); moveRank(index, 1) }} disabled={index === topTen.length - 1 || saving}>↓</button>
-                                    <button type="button" className="btn-secondary !px-2 !py-1" onClick={(event) => { event.stopPropagation(); removeFromTop(index) }} disabled={saving}>Remove</button>
+                                  <div className="flex items-center gap-2 mt-2 sm:mt-0 w-full sm:w-auto shrink-0 border-t border-slate-200 pt-2 sm:border-0 sm:pt-0">
+                                    <button type="button" className="btn-secondary !px-2 !py-1 flex-1 sm:flex-none justify-center" onClick={(event) => { event.stopPropagation(); moveRank(index, -1) }} disabled={index === 0 || saving}>↑</button>
+                                    <button type="button" className="btn-secondary !px-2 !py-1 flex-1 sm:flex-none justify-center" onClick={(event) => { event.stopPropagation(); moveRank(index, 1) }} disabled={index === topTen.length - 1 || saving}>↓</button>
+                                    <button type="button" className="btn-secondary !px-2 !py-1 flex-1 sm:flex-none justify-center text-red-700 sm:text-slate-700" onClick={(event) => { event.stopPropagation(); removeFromTop(index) }} disabled={saving}>Remove</button>
                                   </div>
                                 ) : null}
                               </div>
@@ -299,7 +299,7 @@ export default function CartDrawer() {
                                 ref={providedDraggable.innerRef}
                                 {...providedDraggable.draggableProps}
                                 {...providedDraggable.dragHandleProps}
-                                className={`rounded-lg border border-slate-200 px-3 py-2 bg-white flex items-start justify-between gap-2 ${snapshotDraggable.isDragging ? 'shadow-lg ring-2 ring-blue-200' : ''}`}
+                                className={`rounded-lg border border-slate-200 px-3 py-2 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${snapshotDraggable.isDragging ? 'shadow-lg ring-2 ring-blue-200' : ''}`}
                                 style={providedDraggable.draggableProps.style}
                                 role="button"
                                 tabIndex={0}
@@ -319,7 +319,7 @@ export default function CartDrawer() {
                                 {!rankingsLocked ? (
                                   <button
                                     type="button"
-                                    className="btn-secondary"
+                                    className="btn-secondary w-full sm:w-auto mt-2 sm:mt-0 justify-center"
                                     onClick={(event) => { event.stopPropagation(); addToTop(item.id) }}
                                     disabled={saving || getRatingValue(item.id) <= 0}
                                     title={getRatingValue(item.id) <= 0 ? 'Rate this project first' : 'Add to Top 10'}

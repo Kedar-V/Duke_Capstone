@@ -12,10 +12,8 @@ import {
   submitProjectComment,
   saveRating,
 } from '../api'
-import { clearAuth, getUser } from '../auth'
-import midsLogo from '../assets/mids-logo-white-bg.svg'
-import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
-import CartNavIcon from '../components/CartNavIcon'
+import { getUser } from '../auth'
+import AppHeader from '../components/AppHeader'
 
 function Stars({ rating, onRate, disabled = false }) {
   return (
@@ -102,25 +100,6 @@ export default function ProjectDisplayPage() {
   const [commentDrawerOpen, setCommentDrawerOpen] = useState(false)
   const [error, setError] = useState('')
   const [commentMessage, setCommentMessage] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [accountOpen, setAccountOpen] = useState(false)
-  const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
-
-  const menuItems = user?.role === 'admin'
-    ? ['Projects', 'Partners', 'Admin']
-    : user
-      ? ['Projects', 'Partners']
-      : ['Projects']
-
-  function navigateSection(label) {
-    setMenuOpen(false)
-    setAccountOpen(false)
-    setCommentDrawerOpen(false)
-    if (label === 'Partners') navigate('/partners')
-    if (label === 'Projects') navigate('/projects')
-    if (label === 'Rankings') { import('../events').then(m => m.emit('toggle_cart_drawer')); return }
-    if (label === 'Admin') navigate('/admin')
-  }
 
   useEffect(() => {
     let cancelled = false
@@ -243,17 +222,8 @@ export default function ProjectDisplayPage() {
     }
   }
 
-  function onOpenProfile() {
-    setAccountOpen(false)
+  function closeDrawers() {
     setCommentDrawerOpen(false)
-    navigate('/profile')
-  }
-
-  function onSignOut() {
-    setAccountOpen(false)
-    setCommentDrawerOpen(false)
-    clearAuth()
-    navigate('/login', { replace: true })
   }
 
   const headerTitle = project?.title || projectSlug
@@ -261,204 +231,86 @@ export default function ProjectDisplayPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
-        <div className="card p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative md:hidden">
-                <button
-                  type="button"
-                  className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
-                  aria-label="Open menu"
-                  onClick={() => setMenuOpen((v) => !v)}
-                >
-                  ☰
-                </button>
-                {menuOpen ? (
-                  <div className="absolute left-0 top-full mt-2 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
-                    <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
-                      Sections
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {menuItems.map((label) => (
-                        <button
-                          key={label}
-                          type="button"
-                          className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                          onClick={() => navigateSection(label)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                className="inline-flex"
-                aria-label="Go to projects"
-                onClick={() => navigate('/projects')}
-              >
-                <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
-              </button>
-              <div className="hidden md:flex items-center gap-2 md:ml-3 md:pl-3 md:border-l md:border-slate-200">
-                {menuItems.map((label) => {
-                  const isActive = label === 'Projects'
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      className={
-                        isActive
-                          ? 'px-3 py-2 rounded-card text-sm bg-duke-900 text-white'
-                          : 'px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100'
-                      }
-                      onClick={() => navigateSection(label)}
-                    >
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 md:gap-3">
-              {user ? <CartNavIcon /> : null}
-              <div className="relative">
-                <button
-                  type="button"
-                  className="h-10 w-10 rounded-full bg-duke-900 text-white text-sm font-semibold"
-                  aria-label={user ? 'Account menu' : 'Sign in'}
-                  title={user ? 'Account menu' : 'Sign in'}
-                  onClick={() => {
-                    if (!user) {
-                      navigate('/login')
-                      return
-                    }
-                    setAccountOpen((v) => !v)
-                  }}
-                >
-                  {!accountAvatarFailed ? (
-                    <img
-                      src={resolveProfileImageUrl({
-                        displayName: user?.display_name,
-                        email: user?.email,
-                        profileImageUrl: user?.profile_image_url,
-                      })}
-                      alt="Profile"
-                      className="h-full w-full rounded-full object-cover"
-                      onError={(event) => {
-                        if (event.currentTarget.src !== DEFAULT_PROFILE_IMAGE_URL) {
-                          event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
-                          return
-                        }
-                        setAccountAvatarFailed(true)
-                      }}
-                    />
-                  ) : (
-                    initialsForPerson({ displayName: user?.display_name, email: user?.email })
-                  )}
-                </button>
-                {user && accountOpen ? (
-                  <div className="absolute right-0 top-full mt-2 w-44 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-20">
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                      onClick={onOpenProfile}
-                    >
-                      Profile
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full text-left px-3 py-2 rounded-card text-sm text-red-700 hover:bg-red-50"
-                      onClick={onSignOut}
-                    >
-                      Sign out
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+      <div className="max-w-4xl mx-auto px-4 py-10 space-y-6 md:space-y-8">
+        <AppHeader />
 
-            {user?.role === 'student' && commentDrawerOpen ? (
-              <div className="fixed inset-0 z-40" aria-live="polite">
-                <button
-                  type="button"
-                  className="absolute inset-0 bg-slate-900/30"
-                  aria-label="Close question drawer"
-                  onClick={() => setCommentDrawerOpen(false)}
+        {user?.role === 'student' && commentDrawerOpen ? (
+          <div className="fixed inset-0 z-40" aria-live="polite">
+            <button
+              type="button"
+              className="absolute inset-0 bg-slate-900/30"
+              aria-label="Close question drawer"
+              onClick={() => setCommentDrawerOpen(false)}
+            />
+            <aside className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-slate-200 bg-white shadow-2xl p-5 overflow-auto">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Project Questions</div>
+                  <div className="text-lg font-heading text-duke-900">Ask Admin About This Project</div>
+                  <div className="text-xs text-slate-500 mt-1">Visible only to admins. Not visible to other students.</div>
+                </div>
+                <button type="button" className="btn-secondary" onClick={() => setCommentDrawerOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">New Question</div>
+                <textarea
+                  className="input-base mt-2 h-24"
+                  value={projectComment}
+                  onChange={(event) => setProjectComment(event.target.value)}
+                  placeholder="Share questions, concerns, or clarifications about this project"
                 />
-                <aside className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-slate-200 bg-white shadow-2xl p-5 overflow-auto">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Project Questions</div>
-                      <div className="text-lg font-heading text-duke-900">Ask Admin About This Project</div>
-                      <div className="text-xs text-slate-500 mt-1">Visible only to admins. Not visible to other students.</div>
-                    </div>
-                    <button type="button" className="btn-secondary" onClick={() => setCommentDrawerOpen(false)}>
-                      Close
-                    </button>
-                  </div>
-
-                  <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">New Question</div>
-                    <textarea
-                      className="input-base mt-2 h-24"
-                      value={projectComment}
-                      onChange={(event) => setProjectComment(event.target.value)}
-                      placeholder="Share questions, concerns, or clarifications about this project"
-                    />
-                    <button
-                      type="button"
-                      className="btn-primary mt-2 w-full"
-                      onClick={handleSubmitComment}
-                      disabled={commentSaving}
-                    >
-                      {commentSaving ? 'Sending...' : 'Send Comment'}
-                    </button>
-                    {commentMessage ? (
-                      <div className="mt-2 text-xs text-slate-600">{commentMessage}</div>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Your Previous Questions</div>
-                    <div className="mt-2 space-y-2 max-h-[55vh] overflow-auto">
-                      {myComments.length ? (
-                        myComments.map((item) => {
-                          const created = item?.created_at ? new Date(item.created_at) : null
-                          const createdText = created && !Number.isNaN(created.getTime())
-                            ? created.toLocaleString()
-                            : 'Unknown time'
-                          const resolved = Boolean(item?.is_resolved)
-                          return (
-                            <div key={item.id} className="rounded border border-slate-200 bg-white p-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-[11px] text-slate-500">{createdText}</div>
-                                <span
-                                  className={
-                                    resolved
-                                      ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
-                                      : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
-                                  }
-                                >
-                                  {resolved ? 'Resolved' : 'Unresolved'}
-                                </span>
-                              </div>
-                              <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">{item.comment}</div>
-                            </div>
-                          )
-                        })
-                      ) : (
-                        <div className="text-xs text-slate-500">You have not posted a question for this project yet.</div>
-                      )}
-                    </div>
-                  </div>
-                </aside>
+                <button
+                  type="button"
+                  className="btn-primary mt-2 w-full"
+                  onClick={handleSubmitComment}
+                  disabled={commentSaving}
+                >
+                  {commentSaving ? 'Sending...' : 'Send Comment'}
+                </button>
+                {commentMessage ? (
+                  <div className="mt-2 text-xs text-slate-600">{commentMessage}</div>
+                ) : null}
               </div>
-            ) : null}
+
+              <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Your Previous Questions</div>
+                <div className="mt-2 space-y-2 max-h-[55vh] overflow-auto">
+                  {myComments.length ? (
+                    myComments.map((item) => {
+                      const created = item?.created_at ? new Date(item.created_at) : null
+                      const createdText = created && !Number.isNaN(created.getTime())
+                        ? created.toLocaleString()
+                        : 'Unknown time'
+                      const resolved = Boolean(item?.is_resolved)
+                      return (
+                        <div key={item.id} className="rounded border border-slate-200 bg-white p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[11px] text-slate-500">{createdText}</div>
+                            <span
+                              className={
+                                resolved
+                                  ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                                  : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                              }
+                            >
+                              {resolved ? 'Resolved' : 'Unresolved'}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap">{item.comment}</div>
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <div className="text-xs text-slate-500">You have not posted a question for this project yet.</div>
+                  )}
+                </div>
+              </div>
+            </aside>
           </div>
-        </div>
+        ) : null}
 
         {loading ? (
           <div className="card p-6 text-slate-600">Loading…</div>
