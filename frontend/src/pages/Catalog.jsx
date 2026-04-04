@@ -18,6 +18,7 @@ import {
 import { clearAuth, getUser } from '../auth'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
+import CartNavIcon from '../components/CartNavIcon'
 
 function Stars({ rating, onRate, disabled = false }) {
   return (
@@ -370,9 +371,9 @@ export default function CatalogPage() {
   const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
 
   const menuItems = user?.role === 'admin'
-    ? ['Projects', 'Partners', 'Rankings', 'Admin']
+    ? ['Projects', 'Partners', 'Admin']
     : user
-      ? ['Projects', 'Partners', 'Rankings']
+      ? ['Projects', 'Partners']
       : ['Projects']
 
   function navigateSection(label) {
@@ -380,7 +381,7 @@ export default function CatalogPage() {
     setAccountOpen(false)
     if (label === 'Partners') navigate('/partners')
     if (label === 'Projects') navigate('/projects')
-    if (label === 'Rankings') navigate('/rankings')
+    if (label === 'Rankings') { import('../events').then(m => m.emit('toggle_cart_drawer')); return }
     if (label === 'Admin') navigate('/admin')
   }
 
@@ -595,14 +596,7 @@ export default function CatalogPage() {
       navigate('/login')
       return
     }
-    setRankingPanelOpen(true)
-    const [panelResult, ratingRows] = await Promise.all([
-      loadRankingPanelData(),
-      getRatings().catch(() => []),
-    ])
-    const ratingMap = buildRatingMap(ratingRows)
-    setRatings((prev) => ({ ...prev, ...ratingMap }))
-    return panelResult
+    import('../events').then((m) => m.emit('toggle_cart_drawer'))
   }
 
   async function persistRankingPanel(nextTopTen, nextAdditional) {
@@ -792,6 +786,7 @@ export default function CatalogPage() {
                 />
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔎</span>
               </div>
+              {user ? <CartNavIcon /> : null}
               <div className="relative">
                 <button
                   type="button"
@@ -1140,18 +1135,15 @@ export default function CatalogPage() {
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <div className="card px-4 py-3">
-                    <div className="text-xs text-slate-500">Selected</div>
-                    <div className="text-2xl font-semibold text-duke-900">
-                      {cart.selected} / {cart.limit}
+                  <div className="card px-4 py-3 flex gap-4">
+                    <div>
+                      <div className="text-xs text-slate-500">Total Projects</div>
+                      <div className="text-xl font-semibold text-duke-900">{stats.active_projects || 0}</div>
                     </div>
-                    <button
-                      type="button"
-                      className="btn-primary mt-2"
-                      onClick={openRankingPanel}
-                    >
-                      Go to selected projects
-                    </button>
+                    <div className="border-l border-slate-200 pl-4">
+                      <div className="text-xs text-slate-500">New This Week</div>
+                      <div className="text-xl font-semibold text-duke-900">{stats.new_this_week || 0}</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1228,176 +1220,6 @@ export default function CatalogPage() {
             )}
           </div>
         </div>
-      </div>
-
-      <div
-        className={`fixed inset-0 z-50 transition ${rankingPanelOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
-        aria-hidden={!rankingPanelOpen}
-      >
-        <div
-          className={`absolute inset-0 bg-slate-900/30 transition-opacity ${rankingPanelOpen ? 'opacity-100' : 'opacity-0'}`}
-          onClick={() => setRankingPanelOpen(false)}
-        />
-        <aside
-          className={`absolute top-0 h-full w-full max-w-2xl bg-white shadow-2xl border-l border-slate-200 transition-[right] duration-300 ${rankingPanelOpen ? 'right-0' : '-right-full'}`}
-        >
-          <div className="h-full flex flex-col">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Selected Projects</div>
-                <div className="text-lg font-semibold text-duke-900">Rank in-page</div>
-              </div>
-              <button type="button" className="btn-secondary" onClick={() => setRankingPanelOpen(false)}>Close</button>
-            </div>
-
-            {rankingPanelLoading ? (
-              <div className="p-5 text-sm text-slate-600">Loading selected projects…</div>
-            ) : (
-              <div className="p-5 space-y-4 overflow-auto">
-                <div className="text-xs text-slate-600">
-                  {rankingsLocked ? 'Ranking window closed' : `${rankingPanelTopTen.length}/10 ranked`}
-                </div>
-                {rankingPanelError ? <div className="text-sm text-red-700">{rankingPanelError}</div> : null}
-
-                <DragDropContext onDragEnd={handlePanelDragEnd}>
-                  <section className="rounded-xl border border-slate-200 p-3">
-                    <div className="text-sm font-semibold text-duke-900 mb-2">Top 10</div>
-                    <Droppable droppableId="panel-top">
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.droppableProps}
-                          className={`space-y-2 min-h-[80px] rounded-lg ${snapshot.isDraggingOver ? 'bg-slate-100/70 p-1' : ''}`}
-                        >
-                          {rankingPanelTopTen.map((item, index) => (
-                            <Draggable
-                              key={`panel-top-${item.id}`}
-                              draggableId={`panel-top-${item.id}`}
-                              index={index}
-                              isDragDisabled={rankingsLocked || rankingPanelSaving}
-                            >
-                              {(providedDraggable, snapshotDraggable) => (
-                                <div
-                                  ref={providedDraggable.innerRef}
-                                  {...providedDraggable.draggableProps}
-                                  {...providedDraggable.dragHandleProps}
-                                  className={`rounded-lg border border-slate-200 px-3 py-2 bg-slate-50 flex items-start justify-between gap-2 ${snapshotDraggable.isDragging ? 'shadow-lg ring-2 ring-blue-200' : ''}`}
-                                  style={providedDraggable.draggableProps.style}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => openProjectFromRankingPanel(item)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                      event.preventDefault()
-                                      openProjectFromRankingPanel(item)
-                                    }
-                                  }}
-                                >
-                                  <div>
-                                    <div className="text-xs text-slate-500">Rank {index + 1}</div>
-                                    <div className="text-sm font-semibold text-duke-900">{item.title}</div>
-                                    <div className="text-xs text-slate-500">{item.organization}</div>
-                                    <RatingPreview value={getRatingValue(item.id)} />
-                                  </div>
-                                  {!rankingsLocked ? (
-                                    <div className="flex items-center gap-1">
-                                      <button type="button" className="btn-secondary !px-2 !py-1" onClick={(event) => { event.stopPropagation(); panelMoveRank(index, -1) }} disabled={index === 0 || rankingPanelSaving}>↑</button>
-                                      <button type="button" className="btn-secondary !px-2 !py-1" onClick={(event) => { event.stopPropagation(); panelMoveRank(index, 1) }} disabled={index === rankingPanelTopTen.length - 1 || rankingPanelSaving}>↓</button>
-                                      <button type="button" className="btn-secondary !px-2 !py-1" onClick={(event) => { event.stopPropagation(); panelRemoveFromTop(index) }} disabled={rankingPanelSaving}>Remove</button>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                          {provided.placeholder}
-                          {rankingPanelTopTen.length === 0 ? (
-                            <div className="text-sm text-slate-500">No projects ranked yet.</div>
-                          ) : null}
-                        </div>
-                      )}
-                    </Droppable>
-                  </section>
-
-                  <section className="rounded-xl border border-slate-200 p-3">
-                    <div className="text-sm font-semibold text-duke-900 mb-2">Unranked selected projects</div>
-                    <Droppable droppableId="panel-additional">
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.droppableProps}
-                          className={`space-y-2 max-h-[260px] overflow-auto min-h-[80px] rounded-lg ${snapshot.isDraggingOver ? 'bg-slate-100/70 p-1' : ''}`}
-                        >
-                          {rankingPanelAdditional.map((item, index) => (
-                            <Draggable
-                              key={`panel-additional-${item.id}`}
-                              draggableId={`panel-additional-${item.id}`}
-                              index={index}
-                              isDragDisabled={rankingsLocked || rankingPanelSaving}
-                            >
-                              {(providedDraggable, snapshotDraggable) => (
-                                <div
-                                  ref={providedDraggable.innerRef}
-                                  {...providedDraggable.draggableProps}
-                                  {...providedDraggable.dragHandleProps}
-                                  className={`rounded-lg border border-slate-200 px-3 py-2 bg-white flex items-start justify-between gap-2 ${snapshotDraggable.isDragging ? 'shadow-lg ring-2 ring-blue-200' : ''}`}
-                                  style={providedDraggable.draggableProps.style}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => openProjectFromRankingPanel(item)}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                      event.preventDefault()
-                                      openProjectFromRankingPanel(item)
-                                    }
-                                  }}
-                                >
-                                  <div>
-                                    <div className="text-sm font-semibold text-duke-900">{item.title}</div>
-                                    <div className="text-xs text-slate-500">{item.organization}</div>
-                                    <RatingPreview value={getRatingValue(item.id)} />
-                                  </div>
-                                  {!rankingsLocked ? (
-                                    <button
-                                      type="button"
-                                      className="btn-secondary"
-                                      onClick={(event) => { event.stopPropagation(); panelAddToTop(item.id) }}
-                                      disabled={rankingPanelSaving || getRatingValue(item.id) <= 0}
-                                      title={getRatingValue(item.id) <= 0 ? 'Rate this project first' : 'Add to Top 10'}
-                                    >
-                                      Add
-                                    </button>
-                                  ) : null}
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                          {provided.placeholder}
-                          {rankingPanelAdditional.length === 0 ? (
-                            <div className="text-sm text-slate-500">No additional selected projects.</div>
-                          ) : null}
-                        </div>
-                      )}
-                    </Droppable>
-                  </section>
-                </DragDropContext>
-              </div>
-            )}
-
-            <div className="px-5 py-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
-              <button type="button" className="btn-secondary" onClick={() => navigate('/rankings')}>
-                Open full rankings page
-              </button>
-              {!rankingsLocked ? (
-                <span className="text-xs text-slate-500">
-                  Changes auto-save until the ranking window closes.
-                </span>
-              ) : (
-                <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">Locked</span>
-              )}
-            </div>
-          </div>
-        </aside>
       </div>
     </div>
   )

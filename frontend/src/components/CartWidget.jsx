@@ -14,19 +14,13 @@ export default function CartWidget() {
     return null
   }
 
-  // Only show to students
-  const user = getUser()
-  if (user && user.role !== 'student') {
-    return null
-  }
-
   useEffect(() => {
     let cancelled = false
 
     async function load() {
       try {
         const cart = await getCart()
-        if (!cancelled) setCartCount(cart.selected || 0)
+        if (!cancelled) setCartCount(cart?.selected || 0)
       } catch (err) {
         // ignore errors if not authed
       }
@@ -45,8 +39,6 @@ export default function CartWidget() {
       unsubscribe()
     }
   }, [])
-
-  if (cartCount === 0) return null
 
   return (
     <div className="fixed bottom-6 right-6 z-40">

@@ -15,6 +15,7 @@ import {
 import { clearAuth, getUser } from '../auth'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
+import CartNavIcon from '../components/CartNavIcon'
 
 function Stars({ rating, onRate, disabled = false }) {
   return (
@@ -106,9 +107,9 @@ export default function ProjectDisplayPage() {
   const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
 
   const menuItems = user?.role === 'admin'
-    ? ['Projects', 'Partners', 'Rankings', 'Admin']
+    ? ['Projects', 'Partners', 'Admin']
     : user
-      ? ['Projects', 'Partners', 'Rankings']
+      ? ['Projects', 'Partners']
       : ['Projects']
 
   function navigateSection(label) {
@@ -117,7 +118,7 @@ export default function ProjectDisplayPage() {
     setCommentDrawerOpen(false)
     if (label === 'Partners') navigate('/partners')
     if (label === 'Projects') navigate('/projects')
-    if (label === 'Rankings') navigate('/rankings')
+    if (label === 'Rankings') { import('../events').then(m => m.emit('toggle_cart_drawer')); return }
     if (label === 'Admin') navigate('/admin')
   }
 
@@ -321,7 +322,8 @@ export default function ProjectDisplayPage() {
                 })}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              {user ? <CartNavIcon /> : null}
               <div className="relative">
                 <button
                   type="button"

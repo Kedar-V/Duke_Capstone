@@ -5,6 +5,7 @@ import { getStudents, getTeammateChoices, saveTeammateChoices } from '../api'
 import { clearAuth, getUser } from '../auth'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
+import CartNavIcon from '../components/CartNavIcon'
 
 export default function PartnersPage() {
   const navigate = useNavigate()
@@ -22,16 +23,14 @@ export default function PartnersPage() {
   const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
   const popupTimerRef = useRef(null)
 
-  const menuItems = user?.role === 'admin'
-    ? ['Projects', 'Partners', 'Rankings', 'Admin']
-    : ['Projects', 'Partners', 'Rankings']
+  const menuItems = user?.role === 'admin' ? ['Projects', 'Partners', 'Admin'] : ['Projects', 'Partners']
 
   function navigateSection(label) {
     setMenuOpen(false)
     setAccountOpen(false)
     if (label === 'Partners') navigate('/partners')
     if (label === 'Projects') navigate('/projects')
-    if (label === 'Rankings') navigate('/rankings')
+    if (label === 'Rankings') { import('../events').then(m => m.emit('toggle_cart_drawer')); return }
     if (label === 'Admin') navigate('/admin')
   }
 
@@ -278,8 +277,10 @@ export default function PartnersPage() {
                 })}
               </div>
             </div>
-            <div className="relative">
-              <button
+            <div className="flex items-center gap-2 md:gap-3">
+              {user ? <CartNavIcon /> : null}
+              <div className="relative">
+                <button
                 type="button"
                 className="h-10 w-10 rounded-full bg-duke-900 text-white text-sm font-semibold"
                 aria-label="Account menu"
@@ -328,6 +329,7 @@ export default function PartnersPage() {
                   </button>
                 </div>
               ) : null}
+            </div>
             </div>
           </div>
         </div>

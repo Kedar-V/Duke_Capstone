@@ -39,6 +39,7 @@ import {
 import { clearAuth, getUser } from '../auth'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
+import CartNavIcon from '../components/CartNavIcon'
 
 const roleOptions = ['student', 'admin', 'faculty', 'client']
 
@@ -448,7 +449,7 @@ export default function AdminPage() {
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
 
-  const menuItems = ['Projects', 'Partners', 'Rankings', 'Admin']
+  const menuItems = ['Projects', 'Partners', 'Admin']
   const adminTabs = [
     {
       key: 'assignment-rules',
@@ -1100,7 +1101,7 @@ export default function AdminPage() {
     setCommentBellOpen(false)
     if (label === 'Partners') navigate('/partners')
     if (label === 'Projects') navigate('/projects')
-    if (label === 'Rankings') navigate('/rankings')
+    if (label === 'Rankings') { import('../events').then(m => m.emit('toggle_cart_drawer')); return }
     if (label === 'Admin') navigate('/admin')
   }
 
@@ -2256,6 +2257,7 @@ export default function AdminPage() {
               <div className="text-xs uppercase tracking-wide text-slate-400">Admin</div>
               <div className="text-lg font-heading text-duke-900">Control Center</div>
             </div>
+            <CartNavIcon />
             <div className="relative">
               <button
                 type="button"
