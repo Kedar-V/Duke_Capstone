@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import CatalogPage from './pages/Catalog'
 import LoginPage from './pages/Login'
+import MagicLinkVerifyPage from './pages/MagicLinkVerify'
 import PartnersPage from './pages/Partners'
 import ProfilePage from './pages/Profile'
 import ProjectDisplayPage from './pages/ProjectDisplay'
@@ -26,6 +27,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/verify" element={<MagicLinkVerifyPage />} />
       <Route
         path="/projects"
         element={<CatalogPage />}

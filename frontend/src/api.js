@@ -116,8 +116,15 @@ export function firstLoginVerifyOtp({ email, otp, newPassword, displayName }) {
   })
 }
 
-export function clerkExchange(token) {
-  return request('/api/auth/clerk-exchange', {
+export function requestMagicLink(email) {
+  return request('/api/auth/magic-link', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function verifyMagicLink(token) {
+  return request('/api/auth/magic-link/verify', {
     method: 'POST',
     body: JSON.stringify({ token }),
   })
