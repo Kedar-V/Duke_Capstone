@@ -8,6 +8,7 @@ import ProfilePage from './pages/Profile'
 import ProjectDisplayPage from './pages/ProjectDisplay'
 import RankingsPage from './pages/Rankings'
 import AdminPage from './pages/Admin'
+import CartWidget from './components/CartWidget'
 import { getToken, getUser, onAuthChanged } from './auth'
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
   const isAdmin = getUser()?.role === 'admin'
 
   return (
+    <>
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<LoginPage />} />
@@ -52,5 +54,7 @@ export default function App() {
       />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
+    <CartWidget />
+    </>
   )
 }

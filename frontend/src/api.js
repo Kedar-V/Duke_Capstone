@@ -1,4 +1,5 @@
-import { getToken } from './auth'
+import { getToken, clearAuth } from './auth'
+import { emit } from './events'
 
 async function request(path, options) {
   const token = getToken()
@@ -120,17 +121,21 @@ export function getCart() {
   return request('/api/cart')
 }
 
-export function addCartItem({ projectId }) {
-  return request('/api/cart/items', {
+export async function addCartItem({ projectId }) {
+  const result = await request('/api/cart/items', {
     method: 'POST',
     body: JSON.stringify({ project_id: projectId }),
   })
+  emit('cart_updated', result)
+  return result
 }
 
-export function removeCartItem(projectId) {
-  return request(`/api/cart/items/${encodeURIComponent(projectId)}`, {
+export async function removeCartItem(projectId) {
+  const result = await request(`/api/cart/items/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
   })
+  emit('cart_updated', result)
+  return result
 }
 
 export function getTeammateChoices() {
