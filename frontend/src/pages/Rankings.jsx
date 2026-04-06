@@ -5,6 +5,7 @@ import { getRankings, getRatings, removeCartItem, saveRankings } from '../api'
 import { clearAuth, getUser } from '../auth'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
+import CartNavIcon from '../components/CartNavIcon'
 
 export default function RankingsPage() {
   const navigate = useNavigate()
@@ -422,8 +423,10 @@ export default function RankingsPage() {
                 })}
               </div>
             </div>
-            <div className="relative">
-              <button
+            <div className="flex items-center gap-2 md:gap-3">
+              {user ? <CartNavIcon /> : null}
+              <div className="relative">
+                <button
                 type="button"
                 className="h-10 w-10 rounded-full bg-duke-900 text-white text-sm font-semibold"
                 aria-label="Account menu"
@@ -472,6 +475,7 @@ export default function RankingsPage() {
                   </button>
                 </div>
               ) : null}
+            </div>
             </div>
           </div>
         </div>

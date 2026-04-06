@@ -249,10 +249,6 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
-
-        {/* <div className="mt-4 text-xs text-slate-500">
-          Dev default: <span className="font-mono">dev@duke.edu</span> / <span className="font-mono">devpassword</span>
-        </div> */}
       </div>
     </div>
   )

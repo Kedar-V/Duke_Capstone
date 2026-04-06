@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { getStudents, getTeammateChoices, saveTeammateChoices } from '../api'
-import { clearAuth, getUser } from '../auth'
-import midsLogo from '../assets/mids-logo-white-bg.svg'
-import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
+import { getUser } from '../auth'
+import AppHeader from '../components/AppHeader'
+import { DEFAULT_PROFILE_IMAGE_URL, resolveProfileImageUrl } from '../profileImage'
 
 export default function PartnersPage() {
   const navigate = useNavigate()
@@ -17,29 +17,7 @@ export default function PartnersPage() {
   const [searchText, setSearchText] = useState('')
   const [saving, setSaving] = useState(false)
   const [popup, setPopup] = useState(null)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [accountOpen, setAccountOpen] = useState(false)
-  const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
   const popupTimerRef = useRef(null)
-
-  const menuItems = user?.role === 'admin'
-    ? ['Projects', 'Partners', 'Rankings', 'Admin']
-    : ['Projects', 'Partners', 'Rankings']
-
-  function navigateSection(label) {
-    setMenuOpen(false)
-    setAccountOpen(false)
-    if (label === 'Partners') navigate('/partners')
-    if (label === 'Projects') navigate('/projects')
-    if (label === 'Rankings') navigate('/rankings')
-    if (label === 'Admin') navigate('/admin')
-  }
-
-  function onSignOut() {
-    setAccountOpen(false)
-    clearAuth()
-    navigate('/login', { replace: true })
-  }
 
   useEffect(() => {
     let cancelled = false
@@ -218,119 +196,7 @@ export default function PartnersPage() {
         </div>
       ) : null}
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
-        <div className="card p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative md:hidden">
-                <button
-                  type="button"
-                  className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center text-lg"
-                  aria-label="Open menu"
-                  onClick={() => setMenuOpen((v) => !v)}
-                >
-                  ☰
-                </button>
-                {menuOpen ? (
-                  <div className="absolute left-0 top-full mt-2 w-56 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-10">
-                    <div className="text-xs uppercase tracking-wide text-slate-400 px-2 py-1">
-                      Sections
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {menuItems.map((label) => (
-                        <button
-                          key={label}
-                          type="button"
-                          className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                          onClick={() => navigateSection(label)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                className="inline-flex"
-                aria-label="Go to projects"
-                onClick={() => navigate('/projects')}
-              >
-                <img src={midsLogo} alt="MIDS" className="h-9 sm:h-10 md:h-12 w-auto" />
-              </button>
-              <div className="hidden md:flex items-center gap-2 md:ml-3 md:pl-3 md:border-l md:border-slate-200">
-                {menuItems.map((label) => {
-                  const isActive = label === 'Partners'
-                  return (
-                    <button
-                      key={label}
-                      type="button"
-                      className={
-                        isActive
-                          ? 'px-3 py-2 rounded-card text-sm bg-duke-900 text-white'
-                          : 'px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100'
-                      }
-                      onClick={() => navigateSection(label)}
-                    >
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-            <div className="relative">
-              <button
-                type="button"
-                className="h-10 w-10 rounded-full bg-duke-900 text-white text-sm font-semibold"
-                aria-label="Account menu"
-                title="Account menu"
-                onClick={() => setAccountOpen((v) => !v)}
-              >
-                {!accountAvatarFailed ? (
-                  <img
-                    src={resolveProfileImageUrl({
-                      displayName: user?.display_name,
-                      email: user?.email,
-                      profileImageUrl: user?.profile_image_url,
-                    })}
-                    alt="Profile"
-                    className="h-full w-full rounded-full object-cover"
-                    onError={(event) => {
-                      if (event.currentTarget.src !== DEFAULT_PROFILE_IMAGE_URL) {
-                        event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
-                        return
-                      }
-                      setAccountAvatarFailed(true)
-                    }}
-                  />
-                ) : (
-                  initialsForPerson({ displayName: user?.display_name, email: user?.email })
-                )}
-              </button>
-              {accountOpen ? (
-                <div className="absolute right-0 top-full mt-2 w-44 rounded-card border border-slate-200 bg-white shadow-sm p-2 z-20">
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-                    onClick={() => {
-                      setAccountOpen(false)
-                      navigate('/profile')
-                    }}
-                  >
-                    Profile
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-card text-sm text-red-700 hover:bg-red-50"
-                    onClick={onSignOut}
-                  >
-                    Sign out
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
+        <AppHeader />
         <div className="card p-6">
           <div className="flex items-center justify-between">
             <div>

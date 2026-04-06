@@ -7,14 +7,19 @@ from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken
 
-# REMOVE THIS - CREATE A NEW KEY
-TEAMMATE_PREFS_KEY = "5FBcF132F1wA4fxu7Ep2EAVURswqPKMuDdDiGUP4mRw="
+
+@lru_cache(maxsize=1)
+def _get_teammate_prefs_key() -> str:
+    key = os.getenv("TEAMMATE_PREFS_KEY", "").strip()
+    if not key:
+        raise RuntimeError("TEAMMATE_PREFS_KEY is not set")
+    return key
 
 
 @lru_cache(maxsize=1)
 def _get_fernet() -> Fernet:
     try:
-        return Fernet(TEAMMATE_PREFS_KEY.encode("utf-8"))
+        return Fernet(_get_teammate_prefs_key().encode("utf-8"))
     except Exception as exc:  # pragma: no cover - surface key issues early
         print(exc)
         raise
@@ -23,7 +28,7 @@ def _get_fernet() -> Fernet:
 @lru_cache(maxsize=1)
 def _get_hmac_key() -> bytes:
     try:
-        cleaned = TEAMMATE_PREFS_KEY.strip()
+        cleaned = _get_teammate_prefs_key().strip()
         padding = (4 - (len(cleaned) % 4)) % 4
         cleaned = f"{cleaned}{'=' * padding}"
         return base64.urlsafe_b64decode(cleaned.encode("utf-8"))

@@ -1,5 +1,5 @@
 -- Duke Capstone database schema (PostgreSQL)
--- Intake-form driven schema
+-- Complete schema including all migrations through 0009_prod_schema_sync
 
 begin;
 
@@ -8,6 +8,7 @@ create table if not exists cohorts (
   name text unique not null,
   program text,
   year int,
+  rankings_editable_until timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -37,15 +38,14 @@ create table if not exists projects (
   edit_token text unique,
   edit_url text,
   revisions jsonb not null default '[]'::jsonb,
+  project_status text not null default 'draft',
+  published_at timestamptz,
+  archived_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
 
-alter table projects add column if not exists project_id bigserial;
-alter table projects add column if not exists slug text;
-alter table projects add column if not exists cohort_id bigint references cohorts(id) on delete set null;
-alter table projects add column if not exists deleted_at timestamptz;
 create unique index if not exists idx_projects_slug on projects(slug);
 
 create table if not exists companies (
@@ -57,8 +57,6 @@ create table if not exists companies (
   logo_url text,
   created_at timestamptz not null default now()
 );
-
-alter table companies add column if not exists sector text;
 
 create table if not exists project_companies (
   project_id bigint primary key references projects(project_id) on delete cascade,
@@ -78,11 +76,6 @@ create table if not exists users (
   deleted_at timestamptz
 );
 
-alter table users add column if not exists password_hash text;
-alter table users add column if not exists role text default 'student';
-alter table users add column if not exists cohort_id bigint references cohorts(id) on delete set null;
-alter table users add column if not exists deleted_at timestamptz;
-
 create table if not exists user_profiles (
   user_id bigint primary key references users(id) on delete cascade,
   avg_match_score int not null default 86,
@@ -98,9 +91,6 @@ create table if not exists students (
   cohort_id bigint references cohorts(id) on delete set null,
   created_at timestamptz not null default now()
 );
-
-alter table students add column if not exists user_id bigint unique references users(id) on delete set null;
-alter table students add column if not exists cohort_id bigint references cohorts(id) on delete set null;
 
 create table if not exists faculty_profiles (
   user_id bigint primary key references users(id) on delete cascade,
@@ -154,9 +144,6 @@ create table if not exists rankings (
   unique (user_id)
 );
 
-alter table rankings add column if not exists is_submitted boolean not null default false;
-alter table rankings add column if not exists submitted_at timestamptz;
-
 create table if not exists ranking_items (
   ranking_id bigint not null references rankings(id) on delete cascade,
   project_id bigint not null references projects(project_id) on delete cascade,
@@ -186,5 +173,79 @@ create table if not exists admin_audit_log (
   details jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+
+-- Assignment engine tables (from migration 0009)
+create table if not exists assignment_rule_configs (
+  id bigserial primary key,
+  name text not null,
+  cohort_id bigint references cohorts(id) on delete set null,
+  is_active boolean not null default false,
+  team_size integer not null default 4 check (team_size between 2 and 8),
+  enforce_same_cohort boolean not null default true,
+  hard_avoid boolean not null default true,
+  max_low_preference_per_team integer not null default 1 check (max_low_preference_per_team between 0 and 8),
+  weight_project_preference integer not null default 55 check (weight_project_preference between 0 and 100),
+  weight_project_rating integer not null default 15 check (weight_project_rating between 0 and 100),
+  weight_mutual_want integer not null default 25 check (weight_mutual_want between 0 and 100),
+  weight_fairness integer not null default 10 check (weight_fairness between 0 and 100),
+  weight_skill_balance integer not null default 10 check (weight_skill_balance between 0 and 100),
+  penalty_avoid integer not null default 100 check (penalty_avoid between 0 and 1000),
+  notes text,
+  extra_rules jsonb not null default '{}'::jsonb,
+  created_by_user_id bigint references users(id) on delete set null,
+  updated_by_user_id bigint references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists assignment_preview_runs (
+  id bigserial primary key,
+  rule_config_id bigint not null references assignment_rule_configs(id) on delete cascade,
+  cohort_id bigint references cohorts(id) on delete set null,
+  initiated_by_user_id bigint not null references users(id) on delete cascade,
+  input_fingerprint text not null,
+  preview_json jsonb not null default '{}'::jsonb,
+  quality_json jsonb not null default '{}'::jsonb,
+  integrity_json jsonb not null default '{}'::jsonb,
+  warnings_json jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists assignment_saved_runs (
+  id bigserial primary key,
+  rule_config_id bigint not null references assignment_rule_configs(id) on delete cascade,
+  cohort_id bigint references cohorts(id) on delete set null,
+  source_preview_run_id bigint references assignment_preview_runs(id) on delete set null,
+  saved_by_user_id bigint not null references users(id) on delete cascade,
+  input_fingerprint text,
+  notes text,
+  preview_json jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists project_comments (
+  id bigserial primary key,
+  project_id bigint not null references projects(project_id) on delete cascade,
+  user_id bigint not null references users(id) on delete cascade,
+  comment text not null,
+  is_resolved boolean not null default false,
+  resolved_at timestamptz,
+  resolved_by_user_id bigint references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Seed a default assignment config if none exists
+insert into assignment_rule_configs (
+  name, cohort_id, is_active, team_size, enforce_same_cohort,
+  hard_avoid, max_low_preference_per_team, weight_project_preference,
+  weight_project_rating, weight_mutual_want, weight_fairness,
+  weight_skill_balance, penalty_avoid, notes, extra_rules
+)
+select
+  'Default Assignment Rules', null, true, 4, true,
+  true, 1, 55, 15, 25, 10, 10, 100,
+  'Seeded default config', '{}'::jsonb
+where not exists (select 1 from assignment_rule_configs);
 
 commit;
