@@ -5,6 +5,7 @@ on:
     branches:
       - diwas
       - assignment_rule
+      - testing_suite
   workflow_dispatch:
     inputs:
       action:
@@ -58,14 +59,14 @@ jobs:
             cd /home/ec2-user/app
             if [ -d ".git" ]; then
               git fetch origin
-              git checkout assignment_rule
-              git reset --hard origin/assignment_rule
+              git checkout testing_suite
+              git reset --hard origin/testing_suite
               git clean -fd
             else
               git clone https://github.com/Kedar-V/Duke_Capstone.git .
               git fetch origin
-              git checkout assignment_rule
-              git reset --hard origin/assignment_rule
+              git checkout testing_suite
+              git reset --hard origin/testing_suite
             fi
 
             if ! command -v docker >/dev/null 2>&1; then
