@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT || 5173)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${PORT}`
+const useExternalServer = process.env.PLAYWRIGHT_USE_EXTERNAL_SERVER === 'true'
 
 export default defineConfig({
   testDir: './tests',
@@ -19,12 +20,14 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  webServer: {
-    command: `npm run dev -- --host 127.0.0.1 --port ${PORT}`,
-    url: baseURL,
-    timeout: 120_000,
-    reuseExistingServer: true,
-  },
+  webServer: useExternalServer
+    ? undefined
+    : {
+        command: `npm run dev -- --host 127.0.0.1 --port ${PORT}`,
+        url: baseURL,
+        timeout: 120_000,
+        reuseExistingServer: true,
+      },
   projects: [
     {
       name: 'chromium',

@@ -1,0 +1,58 @@
+name: Post-Deploy Student Smoke Tests
+
+on:
+  workflow_run:
+    workflows: ["Build & Deploy to EC2 via Docker"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  post-deploy-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLAYWRIGHT_USE_EXTERNAL_SERVER: "true"
+      PLAYWRIGHT_BASE_URL: ${{ vars.APP_BASE_URL }}
+      E2E_STUDENT_EMAIL: ${{ vars.E2E_STUDENT_EMAIL != '' && vars.E2E_STUDENT_EMAIL || 'dev@duke.edu' }}
+      E2E_STUDENT_PASSWORD: ${{ vars.E2E_STUDENT_PASSWORD != '' && vars.E2E_STUDENT_PASSWORD || 'devpassword' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify base URL is configured
+        run: |
+          if [ -z "${PLAYWRIGHT_BASE_URL}" ]; then
+            echo "Set repository variable APP_BASE_URL (for example: https://dukemidscapstone.com)"
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Run post-deploy smoke tests
+        run: npm run test:e2e:postdeploy
+        working-directory: frontend
+
+      - name: Upload Playwright artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-post-deploy
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14

@@ -1,27 +1,104 @@
-name: Playwright Tests
+name: Student Workflow E2E
+
 on:
-  push:
-    branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, testing_suite, assignment_rule, diwas ]
+  push:
+    branches: [ testing_suite, assignment_rule, diwas ]
+  workflow_dispatch:
+
 jobs:
-  test:
-    timeout-minutes: 60
+  student-workflow-tests:
+    name: Run student workflow Playwright suite
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/duke_capstone
+      TEAMMATE_PREFS_KEY: ${{ secrets.TEAMMATE_PREFS_KEY }}
+      E2E_STUDENT_EMAIL: ${{ vars.E2E_STUDENT_EMAIL != '' && vars.E2E_STUDENT_EMAIL || 'dev@duke.edu' }}
+      E2E_STUDENT_PASSWORD: ${{ vars.E2E_STUDENT_PASSWORD != '' && vars.E2E_STUDENT_PASSWORD || 'devpassword' }}
+      E2E_ADMIN_EMAIL: ${{ vars.E2E_ADMIN_EMAIL != '' && vars.E2E_ADMIN_EMAIL || 'dev@duke.edu' }}
+      E2E_ADMIN_PASSWORD: ${{ vars.E2E_ADMIN_PASSWORD != '' && vars.E2E_ADMIN_PASSWORD || 'devpassword' }}
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:5173
+      PLAYWRIGHT_USE_EXTERNAL_SERVER: "true"
+
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-    - name: Install dependencies
-      run: npm ci
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
-    - name: Run Playwright tests
-      run: npx playwright test
-    - uses: actions/upload-artifact@v4
-      if: ${{ !cancelled() }}
-      with:
-        name: playwright-report
-        path: playwright-report/
-        retention-days: 30
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure TEAMMATE_PREFS_KEY exists
+        run: |
+          if [ -z "${TEAMMATE_PREFS_KEY}" ]; then
+            echo "TEAMMATE_PREFS_KEY secret is required for API startup and teammate preference tests."
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Start docker compose stack
+        run: docker compose up -d --build
+
+      - name: Wait for API health
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8001/health >/dev/null; then
+              echo "API is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become healthy in time"
+          exit 1
+
+      - name: Apply schema and seed data
+        run: |
+          docker compose exec -T db psql -U postgres -d duke_capstone < schema.sql
+          docker compose exec -T db psql -U postgres -d duke_capstone < seed.sql
+
+      - name: Wait for frontend readiness
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:5173 >/dev/null; then
+              echo "Frontend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Frontend did not become ready in time"
+          exit 1
+
+      - name: Run student workflow tests
+        run: |
+          npm run test:e2e -- tests/student-workflows.spec.js tests/randomized-student-workflow.spec.js
+        working-directory: frontend
+
+      - name: Upload Playwright artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-student-workflows
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14
+
+      - name: Dump docker logs on failure
+        if: ${{ failure() }}
+        run: docker compose logs --no-color
+
+      - name: Stop docker compose stack
+        if: ${{ always() }}
+        run: docker compose down -v

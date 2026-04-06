@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
     "test:e2e": "playwright test",
+    "test:e2e:postdeploy": "playwright test tests/post-deploy-smoke.spec.js",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui"
   },

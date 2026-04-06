@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test'
 import { loginAsStudent, logoutFromAccountMenu } from './helpers/auth'
 
 test.describe('Student Workflows', () => {
-  test('redirects unauthenticated user from /projects to /login', async ({ page }) => {
-    await page.goto('/projects')
+  test('redirects unauthenticated user from /rankings to /login', async ({ page }) => {
+    await page.goto('/rankings')
     await page.waitForURL('**/login')
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   })
