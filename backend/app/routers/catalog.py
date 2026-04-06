@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 import os
 from typing import List, Optional
@@ -67,7 +68,11 @@ _PROJECT_STATUS_ARCHIVED = "archived"
 
 def _normalize_project_status(value: Optional[str]) -> str:
     normalized = (value or _PROJECT_STATUS_PUBLISHED).strip().lower()
-    if normalized not in {_PROJECT_STATUS_DRAFT, _PROJECT_STATUS_PUBLISHED, _PROJECT_STATUS_ARCHIVED}:
+    if normalized not in {
+        _PROJECT_STATUS_DRAFT,
+        _PROJECT_STATUS_PUBLISHED,
+        _PROJECT_STATUS_ARCHIVED,
+    }:
         return _PROJECT_STATUS_PUBLISHED
     return normalized
 
@@ -77,9 +82,15 @@ def _ensure_project_status_schema(db: Session) -> None:
     if _project_status_schema_ready:
         return
 
-    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_status TEXT"))
-    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS published_at timestamptz"))
-    db.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at timestamptz"))
+    db.execute(
+        text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_status TEXT")
+    )
+    db.execute(
+        text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS published_at timestamptz")
+    )
+    db.execute(
+        text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at timestamptz")
+    )
     db.execute(
         text(
             """
@@ -98,7 +109,9 @@ def _ensure_project_status_schema(db: Session) -> None:
             """
         )
     )
-    db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET DEFAULT 'draft'"))
+    db.execute(
+        text("ALTER TABLE projects ALTER COLUMN project_status SET DEFAULT 'draft'")
+    )
     db.execute(text("ALTER TABLE projects ALTER COLUMN project_status SET NOT NULL"))
     db.commit()
     _project_status_schema_ready = True
@@ -245,7 +258,9 @@ def _company_name_for_project(db: Session, project_id: int) -> Optional[str]:
     return row[0] if row else None
 
 
-def _company_profile_map(db: Session, project_ids: list[int]) -> dict[int, tuple[str, Optional[str], Optional[str], Optional[str]]]:
+def _company_profile_map(
+    db: Session, project_ids: list[int]
+) -> dict[int, tuple[str, Optional[str], Optional[str], Optional[str]]]:
     _ensure_company_schema(db)
     if not project_ids:
         return {}
@@ -268,7 +283,9 @@ def _company_profile_map(db: Session, project_ids: list[int]) -> dict[int, tuple
     }
 
 
-def _company_profile_for_project(db: Session, project_id: int) -> Optional[tuple[str, Optional[str], Optional[str], Optional[str]]]:
+def _company_profile_for_project(
+    db: Session, project_id: int
+) -> Optional[tuple[str, Optional[str], Optional[str], Optional[str]]]:
     _ensure_company_schema(db)
     row = db.execute(
         select(
@@ -318,7 +335,9 @@ def _submission_deadline_utc() -> Optional[datetime]:
     return parsed.astimezone(timezone.utc)
 
 
-def _cohort_submission_deadline_utc(db: Session, cohort_id: Optional[int]) -> Optional[datetime]:
+def _cohort_submission_deadline_utc(
+    db: Session, cohort_id: Optional[int]
+) -> Optional[datetime]:
     if cohort_id is None:
         return None
 
@@ -336,7 +355,9 @@ def _cohort_submission_deadline_utc(db: Session, cohort_id: Optional[int]) -> Op
     return row.astimezone(timezone.utc)
 
 
-def _effective_submission_deadline_utc(db: Session, current_user: User) -> Optional[datetime]:
+def _effective_submission_deadline_utc(
+    db: Session, current_user: User
+) -> Optional[datetime]:
     cohort_deadline = _cohort_submission_deadline_utc(db, current_user.cohort_id)
     if cohort_deadline:
         return cohort_deadline
@@ -355,8 +376,9 @@ def _enforce_submission_deadline(db: Session, current_user: User) -> None:
     if not deadline:
         return
     if datetime.now(timezone.utc) > deadline:
-        raise HTTPException(status_code=400, detail="Ranking submission window is closed")
-
+        raise HTTPException(
+            status_code=400, detail="Ranking submission window is closed"
+        )
 
 
 @router.get("/organizations", response_model=List[OrganizationOut])
@@ -370,7 +392,10 @@ def list_organizations(
         rows = db.execute(
             select(Company.name, Company.industry)
             .join(ProjectCompany, ProjectCompany.company_id == Company.id)
-            .join(ClientIntakeForm, ClientIntakeForm.project_id == ProjectCompany.project_id)
+            .join(
+                ClientIntakeForm,
+                ClientIntakeForm.project_id == ProjectCompany.project_id,
+            )
             .where(
                 ClientIntakeForm.deleted_at.is_(None),
                 _catalog_visible_status_filter(),
@@ -449,14 +474,20 @@ def list_students(
     student_rows = db.execute(stmt).scalars().all()
     if student_rows:
         if current_user and current_user.email:
-            student_rows = [row for row in student_rows if (row.email or "").lower() != current_user.email.lower()]
+            student_rows = [
+                row
+                for row in student_rows
+                if (row.email or "").lower() != current_user.email.lower()
+            ]
         return student_rows
 
     # Fallback: when cohort roster in students table is empty, expose student-role users.
     user_stmt = select(User).where(User.deleted_at.is_(None), User.role == "student")
     if cohort_id:
         user_stmt = user_stmt.where(User.cohort_id == cohort_id)
-    user_stmt = user_stmt.order_by(User.display_name.asc().nullslast(), User.email.asc().nullslast())
+    user_stmt = user_stmt.order_by(
+        User.display_name.asc().nullslast(), User.email.asc().nullslast()
+    )
     user_rows = db.execute(user_stmt).scalars().all()
 
     out: list[StudentOut] = []
@@ -464,7 +495,11 @@ def list_students(
         if current_user and current_user.id == row.id:
             continue
         display_name = (row.display_name or "").strip()
-        fallback_name = (row.email.split("@")[0] if row.email else "Student").replace(".", " ").title()
+        fallback_name = (
+            (row.email.split("@")[0] if row.email else "Student")
+            .replace(".", " ")
+            .title()
+        )
         out.append(
             StudentOut(
                 id=row.id,
@@ -499,23 +534,30 @@ def list_filters(
 ):
     _ensure_cohort_schema(db)
     _ensure_project_status_schema(db)
-    stmt = select(
-        ClientIntakeForm.technical_domains,
-        ClientIntakeForm.required_skills,
-        Company.industry,
-    ).join(ProjectCompany, ProjectCompany.project_id == ClientIntakeForm.project_id).join(
-        Company, Company.id == ProjectCompany.company_id
-    ).where(ClientIntakeForm.deleted_at.is_(None), _catalog_visible_status_filter())
+    stmt = (
+        select(
+            ClientIntakeForm.technical_domains,
+            ClientIntakeForm.required_skills,
+            Company.industry,
+        )
+        .join(ProjectCompany, ProjectCompany.project_id == ClientIntakeForm.project_id)
+        .join(Company, Company.id == ProjectCompany.company_id)
+        .where(ClientIntakeForm.deleted_at.is_(None), _catalog_visible_status_filter())
+    )
     if current_user and current_user.role == "student" and current_user.cohort_id:
         stmt = stmt.where(ClientIntakeForm.cohort_id == current_user.cohort_id)
         cohort_rows = [
             row.name
-            for row in db.execute(select(Cohort).where(Cohort.id == current_user.cohort_id))
+            for row in db.execute(
+                select(Cohort).where(Cohort.id == current_user.cohort_id)
+            )
             .scalars()
             .all()
         ]
     else:
-        cohort_rows = db.execute(select(Cohort.name).order_by(Cohort.name.asc())).scalars().all()
+        cohort_rows = (
+            db.execute(select(Cohort.name).order_by(Cohort.name.asc())).scalars().all()
+        )
 
     rows = db.execute(stmt).all()
 
@@ -727,7 +769,11 @@ def get_project(
 
     cohort_name = None
     if row.cohort_id:
-        cohort = db.execute(select(Cohort).where(Cohort.id == row.cohort_id)).scalars().first()
+        cohort = (
+            db.execute(select(Cohort).where(Cohort.id == row.cohort_id))
+            .scalars()
+            .first()
+        )
         if cohort:
             cohort_name = cohort.name
 
@@ -803,7 +849,11 @@ def get_project_by_slug(
 
     cohort_name = None
     if row.cohort_id:
-        cohort = db.execute(select(Cohort).where(Cohort.id == row.cohort_id)).scalars().first()
+        cohort = (
+            db.execute(select(Cohort).where(Cohort.id == row.cohort_id))
+            .scalars()
+            .first()
+        )
         if cohort:
             cohort_name = cohort.name
 
@@ -924,7 +974,9 @@ def search_projects(
             if payload.q.lower() not in haystack:
                 return False
 
-        if payload.organization and not contains_substring(payload.organization, row_org):
+        if payload.organization and not contains_substring(
+            payload.organization, row_org
+        ):
             return False
 
         effective_cohort_id = cohort_id
@@ -977,7 +1029,9 @@ def search_projects(
 
     if sort_by == "title":
         filtered.sort(
-            key=lambda row: (row.project_title or org_map.get(row.project_id) or "").lower(),
+            key=lambda row: (
+                row.project_title or org_map.get(row.project_id) or ""
+            ).lower(),
             reverse=reverse,
         )
     else:
@@ -1242,7 +1296,9 @@ def get_teammate_choices(
     allowed_student_ids: Optional[set[int]] = None
     if current_user.role == "student":
         if not current_user.cohort_id:
-            return TeammateChoicesOut(want_ids=[], avoid_ids=[], avoid_reasons={}, comments={})
+            return TeammateChoicesOut(
+                want_ids=[], avoid_ids=[], avoid_reasons={}, comments={}
+            )
         allowed_student_ids = set(
             db.execute(
                 select(Student.id).where(Student.cohort_id == current_user.cohort_id)
@@ -1266,9 +1322,12 @@ def get_teammate_choices(
         if payload_ciphertext:
             try:
                 payload = decrypt_teammate_choice(payload_ciphertext)
-            except Exception as exc:
-                logger.exception("Failed to decrypt teammate preference")
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            except Exception:
+                try:
+                    payload = json.loads(payload_ciphertext)
+                except Exception as exc:
+                    logger.exception("Failed to parse teammate preference payload")
+                    raise HTTPException(status_code=500, detail=str(exc)) from exc
             student_id = payload.get("student_id")
             preference = payload.get("preference")
             comment = payload.get("comment") or payload.get("avoid_reason")
@@ -1313,7 +1372,10 @@ def set_teammate_choices(
 
     if current_user.role == "student":
         if not current_user.cohort_id:
-            raise HTTPException(status_code=400, detail="Student cohort is required for teammate choices")
+            raise HTTPException(
+                status_code=400,
+                detail="Student cohort is required for teammate choices",
+            )
         allowed_student_ids = set(
             db.execute(
                 select(Student.id).where(Student.cohort_id == current_user.cohort_id)
@@ -1388,9 +1450,13 @@ def get_ratings(
     current_user: User = Depends(get_current_user),
 ):
     rows = db.execute(
-        select(Rating.project_id, Rating.rating).where(Rating.user_id == current_user.id)
+        select(Rating.project_id, Rating.rating).where(
+            Rating.user_id == current_user.id
+        )
     ).all()
-    return [RatingOut(project_id=project_id, rating=rating) for project_id, rating in rows]
+    return [
+        RatingOut(project_id=project_id, rating=rating) for project_id, rating in rows
+    ]
 
 
 @router.post("/ratings", response_model=RatingOut)
@@ -1530,7 +1596,9 @@ def save_rankings(
             .scalars()
             .all()
         )
-        non_rankable_ids = [pid for pid in payload.top_ten_ids if pid not in valid_rankable_ids]
+        non_rankable_ids = [
+            pid for pid in payload.top_ten_ids if pid not in valid_rankable_ids
+        ]
         if non_rankable_ids:
             raise HTTPException(
                 status_code=400,
@@ -1547,7 +1615,9 @@ def save_rankings(
             .scalars()
             .all()
         )
-        missing_rating_ids = [pid for pid in payload.top_ten_ids if pid not in rated_ids]
+        missing_rating_ids = [
+            pid for pid in payload.top_ten_ids if pid not in rated_ids
+        ]
         if missing_rating_ids:
             raise HTTPException(
                 status_code=400,
@@ -1619,7 +1689,10 @@ def submit_rankings(
     )
     effective_top_ids = [pid for pid in effective_top_ids if pid in valid_rankable_ids]
     if len(effective_top_ids) != 10:
-        raise HTTPException(status_code=400, detail="You must rank exactly 10 projects before submitting")
+        raise HTTPException(
+            status_code=400,
+            detail="You must rank exactly 10 projects before submitting",
+        )
 
     rated_ids = set(
         db.execute(
@@ -1657,7 +1730,9 @@ def submit_project_comment(
     _ensure_project_comment_schema(db)
 
     if (current_user.role or "student") != "student":
-        raise HTTPException(status_code=403, detail="Only students can submit project comments")
+        raise HTTPException(
+            status_code=403, detail="Only students can submit project comments"
+        )
 
     project = (
         db.execute(
@@ -1699,7 +1774,9 @@ def submit_project_comment(
     )
 
 
-@router.get("/projects/{project_id}/comments/me", response_model=list[ProjectCommentOut])
+@router.get(
+    "/projects/{project_id}/comments/me", response_model=list[ProjectCommentOut]
+)
 def list_my_project_comments(
     project_id: int,
     limit: int = Query(default=20, ge=1, le=200),

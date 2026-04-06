@@ -1039,12 +1039,80 @@ export default function AdminPage() {
     setManualPreassignments((prev) => prev.filter((row) => Number(row.user_id) !== Number(userId)))
   }
 
-  function movePreviewStudent(userId, targetProjectId) {
+  function movePreviewStudent(userId, targetProjectId = null) {
     setPreviewResult((prev) => {
       if (!prev || !Array.isArray(prev.project_assignments)) return prev
-      const minSize = Number(prev.min_team_size || 3)
-      const maxSize = Number(prev.max_team_size || 5)
-      const targetSize = Number(prev.team_size || 4)
+      const maxTeamSize = 5
+      const toNumericOrZero = (value) => {
+        const parsed = Number(value)
+        return Number.isFinite(parsed) ? parsed : 0
+      }
+
+      const scoreRule =
+        (assignmentRules || []).find((row) => Number(row.id) === Number(prev.rule_config_id))
+        || activeAssignmentRule
+        || {}
+      const weightProjectPreference = toNumericOrZero(scoreRule.weight_project_preference)
+      const weightMutualWant = toNumericOrZero(scoreRule.weight_mutual_want)
+      const penaltyAvoid = toNumericOrZero(scoreRule.penalty_avoid)
+
+      const rankByUserProject = new Map()
+      for (const submission of rankingSubmissions || []) {
+        const uid = Number(submission?.user_id)
+        if (!uid || !Array.isArray(submission?.top_ten)) continue
+        const perProject = new Map()
+        for (const item of submission.top_ten) {
+          const pid = Number(item?.project_id)
+          const rank = Number(item?.rank)
+          if (!pid || !rank) continue
+          perProject.set(pid, rank)
+        }
+        if (perProject.size > 0) rankByUserProject.set(uid, perProject)
+      }
+
+      const userIdByEmail = new Map()
+      for (const row of users || []) {
+        if (!row?.email) continue
+        userIdByEmail.set(String(row.email).toLowerCase(), Number(row.id))
+      }
+
+      const wantsByUser = new Map()
+      const avoidsByUser = new Map()
+      for (const row of partnerPreferences || []) {
+        const uid = Number(row?.user_id)
+        if (!uid) continue
+        const wantSet = new Set()
+        const avoidSet = new Set()
+
+        for (const item of row.want || []) {
+          const candidateUid = Number(userIdByEmail.get(String(item?.email || '').toLowerCase()))
+          if (candidateUid) wantSet.add(candidateUid)
+        }
+        for (const item of row.avoid || []) {
+          const candidateUid = Number(userIdByEmail.get(String(item?.email || '').toLowerCase()))
+          if (candidateUid) avoidSet.add(candidateUid)
+        }
+
+        wantsByUser.set(uid, wantSet)
+        avoidsByUser.set(uid, avoidSet)
+      }
+
+      const collectMembership = (projects) => {
+        const byUser = new Map()
+        for (const project of projects) {
+          const pid = Number(project.project_id)
+          for (const team of project.teams || []) {
+            const memberIds = (team || []).map((member) => Number(member.user_id)).filter(Boolean)
+            for (const memberId of memberIds) {
+              byUser.set(memberId, {
+                projectId: pid,
+                teammateIds: memberIds.filter((id) => id !== memberId),
+              })
+            }
+          }
+        }
+        return byUser
+      }
 
       const projectCopies = prev.project_assignments.map((project) => ({
         ...project,
@@ -1052,42 +1120,149 @@ export default function AdminPage() {
           ? project.teams.map((team) => (Array.isArray(team) ? [...team] : []))
           : [],
       }))
+      const unassignedCopies = Array.isArray(prev.unassigned_students) ? [...prev.unassigned_students] : []
+      const previousMembership = collectMembership(projectCopies)
 
-      let movingMember = null
+      const inferredBaseScoreByUser = new Map()
       for (const project of projectCopies) {
-        for (const team of project.teams) {
-          const idx = team.findIndex((member) => Number(member.user_id) === Number(userId))
-          if (idx >= 0) {
-            movingMember = team.splice(idx, 1)[0]
+        const pid = Number(project.project_id)
+        for (const team of project.teams || []) {
+          for (const member of team || []) {
+            const uid = Number(member.user_id)
+            if (!uid) continue
+            const rank = Number(rankByUserProject.get(uid)?.get(pid) || 0)
+            const prefScore = rank > 0 ? Math.max(11 - rank, 0) * weightProjectPreference : 0
+            const teammateIds = previousMembership.get(uid)?.teammateIds || []
+            const wantHits = teammateIds.reduce((acc, teammateId) => (
+              acc + (wantsByUser.get(uid)?.has(teammateId) ? 1 : 0)
+            ), 0)
+            const avoidHits = teammateIds.reduce((acc, teammateId) => (
+              acc + (avoidsByUser.get(uid)?.has(teammateId) ? 1 : 0)
+            ), 0)
+            const existingScore = toNumericOrZero(member.assigned_score)
+            const inferredBase = existingScore - prefScore - (wantHits * weightMutualWant) + (avoidHits * penaltyAvoid)
+            inferredBaseScoreByUser.set(uid, inferredBase)
+          }
+        }
+      }
+
+      let sourceProjectIndex = -1
+      let sourceTeamIndex = -1
+      let sourceMemberIndex = -1
+      let sourceUnassignedIndex = -1
+      let movingMember = null
+
+      for (let projectIndex = 0; projectIndex < projectCopies.length; projectIndex += 1) {
+        const project = projectCopies[projectIndex]
+        for (let teamIndex = 0; teamIndex < project.teams.length; teamIndex += 1) {
+          const team = project.teams[teamIndex]
+          const memberIndex = team.findIndex((member) => Number(member.user_id) === Number(userId))
+          if (memberIndex >= 0) {
+            sourceProjectIndex = projectIndex
+            sourceTeamIndex = teamIndex
+            sourceMemberIndex = memberIndex
+            movingMember = team[memberIndex]
             break
           }
         }
-        project.teams = project.teams.filter((team) => team.length > 0)
-        project.assigned_count = project.teams.reduce((acc, team) => acc + team.length, 0)
         if (movingMember) break
+      }
+
+      if (!movingMember) {
+        sourceUnassignedIndex = unassignedCopies.findIndex((member) => Number(member.user_id) === Number(userId))
+        if (sourceUnassignedIndex >= 0) movingMember = unassignedCopies[sourceUnassignedIndex]
       }
 
       if (!movingMember) return prev
 
-      const targetProject = projectCopies.find((project) => Number(project.project_id) === Number(targetProjectId))
-      if (!targetProject) return prev
+      if (targetProjectId == null) {
+        if (sourceUnassignedIndex >= 0) return prev
+        projectCopies[sourceProjectIndex].teams[sourceTeamIndex].splice(sourceMemberIndex, 1)
+        projectCopies[sourceProjectIndex].teams = projectCopies[sourceProjectIndex].teams.filter((team) => team.length > 0)
+        unassignedCopies.push(movingMember)
+      } else {
+        const targetProjectIndex = projectCopies.findIndex((project) => Number(project.project_id) === Number(targetProjectId))
+        if (targetProjectIndex < 0) return prev
+        if (sourceProjectIndex === targetProjectIndex) return prev
 
-      const flatMembers = targetProject.teams.flat().concat([movingMember])
-      const nextTeamSizes = partitionTeamSizes(flatMembers.length, minSize, maxSize, targetSize)
-      const rebuiltTeams = []
-      let start = 0
-      for (const size of nextTeamSizes) {
-        rebuiltTeams.push(flatMembers.slice(start, start + size))
-        start += size
+        const targetProject = projectCopies[targetProjectIndex]
+        const currentTargetSize = targetProject.teams.reduce((acc, team) => acc + team.length, 0)
+        if (currentTargetSize >= maxTeamSize) {
+          const targetLabel = targetProject.project_title || targetProject.organization || `Project ${targetProject.project_id}`
+          setError(`Cannot move student: ${targetLabel} already has ${maxTeamSize} members. One project can have only one team.`)
+          return prev
+        }
+
+        if (sourceUnassignedIndex >= 0) {
+          unassignedCopies.splice(sourceUnassignedIndex, 1)
+        } else {
+          projectCopies[sourceProjectIndex].teams[sourceTeamIndex].splice(sourceMemberIndex, 1)
+          projectCopies[sourceProjectIndex].teams = projectCopies[sourceProjectIndex].teams.filter((team) => team.length > 0)
+        }
+
+        const updatedTargetMembers = projectCopies[targetProjectIndex].teams.flat().concat([movingMember])
+        projectCopies[targetProjectIndex].teams = [updatedTargetMembers]
+        projectCopies[targetProjectIndex].assigned_count = updatedTargetMembers.length
       }
 
-      targetProject.teams = rebuiltTeams
-      targetProject.assigned_count = flatMembers.length
+      for (const project of projectCopies) {
+        const flat = project.teams.flat()
+        project.teams = flat.length > 0 ? [flat] : []
+        project.assigned_count = flat.length
+      }
+
+      const updatedMembership = collectMembership(projectCopies)
+      for (const project of projectCopies) {
+        const pid = Number(project.project_id)
+        for (const team of project.teams || []) {
+          for (const member of team || []) {
+            const uid = Number(member.user_id)
+            if (!uid) continue
+
+            const newRank = Number(rankByUserProject.get(uid)?.get(pid) || 0)
+            const prefScore = newRank > 0 ? Math.max(11 - newRank, 0) * weightProjectPreference : 0
+            const teammateIds = updatedMembership.get(uid)?.teammateIds || []
+            const wantHits = teammateIds.reduce((acc, teammateId) => (
+              acc + (wantsByUser.get(uid)?.has(teammateId) ? 1 : 0)
+            ), 0)
+            const avoidHits = teammateIds.reduce((acc, teammateId) => (
+              acc + (avoidsByUser.get(uid)?.has(teammateId) ? 1 : 0)
+            ), 0)
+            const baseScore = toNumericOrZero(inferredBaseScoreByUser.get(uid))
+
+            member.assigned_rank = newRank > 0 ? newRank : null
+            member.assigned_score = Math.round(
+              baseScore
+              + prefScore
+              + (wantHits * weightMutualWant)
+              - (avoidHits * penaltyAvoid)
+            )
+          }
+        }
+      }
+
+      const assignedIds = new Set(projectCopies.flatMap((project) => project.teams.flat().map((member) => Number(member.user_id))))
+      const dedupedUnassigned = []
+      const seenUnassigned = new Set()
+      for (const member of unassignedCopies) {
+        const memberId = Number(member.user_id)
+        if (assignedIds.has(memberId) || seenUnassigned.has(memberId)) continue
+        seenUnassigned.add(memberId)
+        dedupedUnassigned.push({
+          ...member,
+          assigned_score: 0,
+          assigned_rank: null,
+        })
+      }
+
+      const assignedTotal = projectCopies.reduce((acc, project) => acc + Number(project.assigned_count || 0), 0)
+      const fallbackUnassignedCount = Math.max(0, Number(prev.total_students || 0) - assignedTotal)
 
       return {
         ...prev,
         project_assignments: projectCopies,
-        unassigned_count: Math.max(0, Number(prev.total_students || 0) - projectCopies.reduce((acc, p) => acc + Number(p.assigned_count || 0), 0)),
+        unassigned_students: dedupedUnassigned,
+        unassigned_count: dedupedUnassigned.length > 0 ? dedupedUnassigned.length : fallbackUnassignedCount,
       }
     })
   }
@@ -1712,115 +1887,94 @@ export default function AdminPage() {
   function ruleExplainerSections(item) {
     if (!item) return []
 
+    const minTeamSize = Number(item.min_team_size ?? 3)
+    const maxTeamSize = Number(item.max_team_size ?? 5)
+    const targetTeamSize = Number(item.team_size ?? Math.round((minTeamSize + maxTeamSize) / 2))
     const projectWeight = Number(item.weight_project_preference || 0)
     const ratingWeight = Number(item.weight_project_rating || 0)
     const wantWeight = Number(item.weight_mutual_want || 0)
+    const avoidPenalty = Number(item.penalty_avoid || 0)
+    const maxLowPrefPerTeam = Number(item.max_low_preference_per_team ?? 1)
     const totalWeight = projectWeight + ratingWeight + wantWeight
+
     const sampleRank = 2
     const samplePrefPoints = 11 - sampleRank
-    const samplePrefScore = samplePrefPoints * projectWeight
     const sampleRating = 8
-    const sampleRatingScore = sampleRating * ratingWeight
     const sampleWantHits = 1
+    const sampleAvoidHits = 1
+    const samplePrefScore = samplePrefPoints * projectWeight
+    const sampleRatingScore = sampleRating * ratingWeight
     const sampleWantBonus = sampleWantHits * wantWeight
-    const sampleAvoidPenalty = Number(item.penalty_avoid || 0)
-
-    const projectA = {
-      label: 'Project A',
-      rank: 2,
-      prefPoints: 9,
-      wantHits: 1,
-      avoidHits: 0,
-      fillPenalty: 0,
-    }
-    const projectAPrefScore = projectA.prefPoints * projectWeight
-    const projectARatingScore = sampleRating * ratingWeight
-    const projectAWantBonus = projectA.wantHits * wantWeight
-    const projectAAvoidPenalty = projectA.avoidHits * sampleAvoidPenalty
-    const projectATotal = projectAPrefScore + projectARatingScore + projectAWantBonus - projectAAvoidPenalty - projectA.fillPenalty
-
-    const projectB = {
-      label: 'Project B',
-      rank: 4,
-      prefPoints: 7,
-      wantHits: 0,
-      avoidHits: 1,
-      fillPenalty: 0,
-    }
-    const projectBPrefScore = projectB.prefPoints * projectWeight
-    const projectBRatingScore = 6 * ratingWeight
-    const projectBWantBonus = projectB.wantHits * wantWeight
-    const projectBAvoidPenalty = projectB.avoidHits * sampleAvoidPenalty
-    const projectBTotalRaw = projectBPrefScore + projectBRatingScore + projectBWantBonus - projectBAvoidPenalty - projectB.fillPenalty
-
-    const stepByStepExample = [
-      'Step 1: The student is considered for two projects with open spots: Project A and Project B.',
-      `Step 2: Project A starts stronger because it is ranked higher by the student (rank #${projectA.rank}) than Project B (rank #${projectB.rank}).`,
-      `Step 2.5: Project A also gets a rating boost (rating ${sampleRating}/10 x weight ${ratingWeight} = ${projectARatingScore}).`,
-      `Step 3: Project A gets an extra boost because one preferred teammate is already on that team (+${projectAWantBonus} points).`,
-      'Step 4: Team-fit balancing weights were removed, so only preference, rating, and teammate signals are used.',
-      item.hard_avoid
-        ? `Step 5: Project B includes someone this student asked to avoid, and hard avoid is enabled, so Project B is skipped.`
-        : `Step 5: Project B remains possible, but it loses points for an avoid match (-${projectBAvoidPenalty}).`,
-      item.hard_avoid
-        ? `Step 6: With Project B removed, the student is assigned to Project A.`
-        : `Step 6: The system compares final totals (A: ${projectATotal}, B: ${projectBTotalRaw}) and picks the higher one.`,
-      'Step 7: The same process repeats for each next student, and team composition updates after every assignment.',
-      'Step 8: If no strong ranked option is available under current constraints, a fallback open spot may be used so the student is still placed when possible.',
-    ]
+    const sampleAvoidPenalty = sampleAvoidHits * avoidPenalty
+    const sampleObjectiveScore =
+      samplePrefScore + sampleRatingScore + sampleWantBonus - sampleAvoidPenalty
 
     return [
       {
-        title: 'Scope and Team Structure',
+        title: 'Algorithm Overview (ILP)',
         points: [
           `Scope: ${item.cohort_id ? `Cohort ${item.cohort_id}` : 'Global across cohorts'}. Only in-scope students/projects are considered.`,
-          `Team size range is ${item.min_team_size ?? 3}-${item.max_team_size ?? 5} (target ${item.team_size ?? 4}). Capacity expands using this range until all assignable students can fit.`,
+          'The solver is Integer Linear Programming (ILP): it optimizes all students and projects in one global solve, not one-by-one greedy placement.',
+          'Decision variables include student-to-project assignment (binary) and whether a project/team is active (binary/integer helper variable).',
+          `Team size window is ${minTeamSize}-${maxTeamSize} with target size ${targetTeamSize}.`,
           `${item.enforce_same_cohort ? 'Same-cohort assignment is enforced when this rule has a cohort scope.' : 'Cross-cohort assignment is allowed if needed by scope.'}`,
-          `Project selection starts from demand: projects ranked more highly and more often are prioritized first.`,
-          'Students with submitted rankings are processed before students without rankings.',
+          'The optimizer searches for the best feasible assignment maximizing total score while respecting all hard constraints.',
         ],
       },
       {
-        title: 'Preference and Teammate Constraints',
+        title: 'Objective Function',
         points: [
-          `${item.hard_avoid ? 'Avoid preferences are hard constraints (blocked placement).' : 'Avoid preferences are soft constraints (score penalty).'} ` +
-            `Penalty value: ${item.penalty_avoid}.`,
-          `Mutual/desired teammate signal weight: ${wantWeight}.`,
-          `Project rating signal weight: ${ratingWeight}.`,
-          `Maximum low-preference placements per team: ${item.max_low_preference_per_team}.`,
-          `Example: if a candidate team already has ${sampleWantHits} preferred teammate, bonus = ${sampleWantHits} x ${wantWeight} = ${sampleWantBonus}.`,
+          'Total score (per student-project-team placement) = preference_score + rating_score + want_bonus - avoid_penalty.',
+          `Expanded: [(11 - rank) x ${projectWeight}] + [rating x ${ratingWeight}] + [want_hits x ${wantWeight}] - [avoid_hits x ${avoidPenalty}].`,
+          `Preference term: (11 - rank) x weight_project_preference (${projectWeight}).`,
+          'Rank mapping note: rank 1 gets 10 preference points, rank 10 gets 1 point, and unranked contributes 0.',
+          `Rating term: rating x weight_project_rating (${ratingWeight}).`,
+          `Teammate affinity term: preferred-teammate-hits x weight_mutual_want (${wantWeight}).`,
+          `${item.hard_avoid ? 'Avoid pairs are primarily handled as a hard feasibility constraint when hard avoid is ON.' : 'Avoid pairs are treated as soft penalties when hard avoid is OFF.'}`,
+          `Penalty term: avoid-hits x penalty_avoid (${avoidPenalty}).`,
+          `Total positive weight budget: ${totalWeight} (before penalties).`,
+          `Worked example: (11-${sampleRank})x${projectWeight} + ${sampleRating}x${ratingWeight} + ${sampleWantHits}x${wantWeight} - ${sampleAvoidHits}x${avoidPenalty} = ${sampleObjectiveScore}.`,
+        ],
+      },
+      {
+        title: 'Feasibility Constraints',
+        points: [
+          'Each student can be assigned to at most one project in the run (and typically exactly one when enough feasible capacity exists).',
+          `If a project/team is active, assigned load must be between min and max: ${minTeamSize} <= team_size <= ${maxTeamSize}.`,
+          `Target size (${targetTeamSize}) guides balancing and interpretation but hard feasibility comes from min/max bounds.`,
+          `${item.hard_avoid ? 'Hard avoid is enabled: avoid pairs cannot share a project.' : 'Hard avoid is disabled: avoid conflicts are allowed but penalized in the objective.'}`,
+          `Low-preference cap: for each active team/project, students with low rank for that project are limited to ${maxLowPrefPerTeam}.`,
+          'Low preference currently means rank > 5; unranked items are not counted as low preference in this cap.',
           item.hard_avoid
-            ? 'Example: if an avoid teammate is present, that project option is skipped entirely for the student.'
-            : `Example: if 1 avoid hit occurs, score reduction = 1 x ${sampleAvoidPenalty} = ${sampleAvoidPenalty}.`,
+            ? 'If constraints conflict too much (for example many avoid pairs + tight team ranges), the solver may leave students unassigned rather than violate hard rules.'
+            : 'When feasibility allows, ILP balances preference quality with penalties to pick the best global solution.',
         ],
       },
       {
-        title: 'Scoring Mix',
+        title: 'How Each Config Changes Behavior',
         points: [
-          `Project preference weight: ${projectWeight}`,
-          `Project rating weight: ${ratingWeight}`,
-          `Mutual want weight: ${wantWeight}`,
-          `Total configured weight: ${totalWeight}`,
-          `Project preference uses rank points (11 - rank). Example with rank #${sampleRank}: points=${samplePrefPoints}, contribution=${samplePrefPoints} x ${projectWeight} = ${samplePrefScore}.`,
-          `Project rating adds rating x weight. Example with rating ${sampleRating}/10: contribution=${sampleRating} x ${ratingWeight} = ${sampleRatingScore}.`,
-          'Higher final score wins for each student among currently valid project slots.',
+          `min_team_size (${minTeamSize}): raises/lowers minimum viable team load; higher values improve cohesion but can reduce feasibility.`,
+          `max_team_size (${maxTeamSize}): controls maximum capacity per team; higher values reduce unassigned risk but can create larger teams.`,
+          `team_size target (${targetTeamSize}): preferred center point for balancing/splitting, while min/max remain hard limits.`,
+          `enforce_same_cohort (${item.enforce_same_cohort ? 'ON' : 'OFF'}): keeps assignments cohort-local when scoped, or allows cross-cohort flexibility.`,
+          `hard_avoid (${item.hard_avoid ? 'ON' : 'OFF'}): toggles avoid relationships between hard exclusions and soft penalties.`,
+          `max_low_preference_per_team (${maxLowPrefPerTeam}): limits concentration of weak-fit placements in any one team.`,
+          `weight_project_preference (${projectWeight}), weight_project_rating (${ratingWeight}), weight_mutual_want (${wantWeight}): shifts objective emphasis among preference rank, rating, and teammate fit.`,
+          `penalty_avoid (${avoidPenalty}): increases/decreases cost of avoid conflicts when soft-penalty mode is active.`,
         ],
       },
       {
-        title: 'Step-by-Step Worked Example',
-        points: stepByStepExample,
-      },
-      {
-        title: 'What To Expect In Results',
+        title: 'How To Read Results',
         points: [
+          'Top-1/Top-3/Top-5 rates summarize preference quality of the final global assignment.',
+          'Unassigned count is the main feasibility pressure indicator; rising values usually mean constraints are too tight for available capacity.',
+          'Compare rule configs using both quality metrics and unassigned count, not a single metric alone.',
+          `Practical tuning: if unassigned is high, first relax hard_avoid or max_low_preference_per_team, or widen min/max from ${minTeamSize}-${maxTeamSize}.`,
           item.notes ? `Notes: ${item.notes}` : 'No notes were added for this config.',
-          'Teams can include members with no rank shown when no ranked option is available under current constraints.',
-          'If constraints are too strict (especially hard avoids), unassigned students may increase.',
-          'Fairness and skill-balance weights were removed from this rule set.',
           item.is_active
             ? 'This config is currently active in its scope.'
             : 'This config is not currently active in its scope.',
-          'Best practice: compare 2-3 runs and choose the one with stronger top-3/top-5 rates and fewer unassigned students.',
+          'Best practice: test 2-3 nearby rule variants and choose the best feasible trade-off.',
         ],
       },
     ]
@@ -3114,19 +3268,6 @@ export default function AdminPage() {
                     </div>
                   ) : null}
 
-                  {Array.isArray(previewResult.unassigned_students) && previewResult.unassigned_students.length > 0 ? (
-                    <div className="rounded-card border border-red-200 bg-red-50 p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-red-700">Unassigned Students</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {previewResult.unassigned_students.map((member) => (
-                          <span key={`unassigned-${member.user_id}`} className="rounded-full border border-red-300 bg-white px-2 py-1 text-xs text-red-700">
-                            {member.display_name || member.email || `User ${member.user_id}`}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                     <div className="rounded-card border border-slate-200 bg-white p-3">
                       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quality Metrics</div>
@@ -3177,7 +3318,7 @@ export default function AdminPage() {
                       Students with rank: {previewResult.quality?.assigned_with_rank ?? 0}
                     </div>
                     <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
-                      Move mode: drag any student bubble to another project/team
+                      Move mode: drag student bubbles between teams and Removed Students bar
                     </div>
                   </div>
 
@@ -3196,8 +3337,9 @@ export default function AdminPage() {
                   ) : null}
 
                   <div className="max-h-[65vh] overflow-auto pr-1">
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                      {(previewResult.project_assignments || []).map((proj) => {
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                      <div className="xl:col-span-2 grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        {(previewResult.project_assignments || []).map((proj) => {
                         const flattenedMembers = (proj.teams || []).flat()
                         const preassignedCount = flattenedMembers.filter((m) => m.is_preassigned).length
                         const rankedCount = flattenedMembers.filter((m) => Number(m.assigned_rank || 0) > 0).length
@@ -3207,77 +3349,123 @@ export default function AdminPage() {
                             .reduce((acc, m) => acc + Number(m.assigned_rank), 0) / rankedCount).toFixed(2)
                           : 'n/a'
 
-                        return (
-                          <div
-                            key={proj.project_id}
-                            className="rounded-card border border-slate-200 bg-white p-3"
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={(event) => {
-                              event.preventDefault()
-                              const userId = Number(event.dataTransfer.getData('text/plain') || dragStudentUserId)
-                              if (userId) movePreviewStudent(userId, proj.project_id)
-                              setDragStudentUserId(null)
-                            }}
-                          >
-                            <div className="text-sm font-semibold text-slate-800">{proj.project_title}</div>
-                            <div className="text-xs text-slate-500">{proj.organization || 'Unknown org'} · Assigned {proj.assigned_count}</div>
+                          return (
+                            <div
+                              key={proj.project_id}
+                              className="rounded-card border border-slate-200 bg-white p-3"
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={(event) => {
+                                event.preventDefault()
+                                const userId = Number(event.dataTransfer.getData('text/plain') || dragStudentUserId)
+                                if (userId) movePreviewStudent(userId, proj.project_id)
+                                setDragStudentUserId(null)
+                              }}
+                            >
+                              <div className="text-sm font-semibold text-slate-800">{proj.project_title}</div>
+                              <div className="text-xs text-slate-500">{proj.organization || 'Unknown org'} · Assigned {proj.assigned_count}</div>
 
-                            <div className="mt-2 grid grid-cols-3 gap-1 text-[11px]">
-                              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Preassigned {preassignedCount}</div>
-                              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Ranked {rankedCount}</div>
-                              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Avg rank {averageRank}</div>
-                            </div>
+                              <div className="mt-2 grid grid-cols-3 gap-1 text-[11px]">
+                                <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Preassigned {preassignedCount}</div>
+                                <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Ranked {rankedCount}</div>
+                                <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-600">Avg rank {averageRank}</div>
+                              </div>
 
-                            <div className="mt-2 space-y-2">
-                              {(proj.teams || []).map((team, teamIdx) => (
-                                <div
-                                  key={`${proj.project_id}-${teamIdx}`}
-                                  className="rounded border border-slate-200 bg-slate-50 px-2 py-2"
-                                  onDragOver={(event) => event.preventDefault()}
-                                  onDrop={(event) => {
-                                    event.preventDefault()
-                                    const userId = Number(event.dataTransfer.getData('text/plain') || dragStudentUserId)
-                                    if (userId) movePreviewStudent(userId, proj.project_id)
-                                    setDragStudentUserId(null)
-                                  }}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="text-xs font-medium text-slate-700">Team {teamIdx + 1}</div>
-                                    <div className="text-[11px] text-slate-500">{team.length} members</div>
+                              <div className="mt-2 space-y-2">
+                                {(proj.teams || []).map((team, teamIdx) => (
+                                  <div
+                                    key={`${proj.project_id}-${teamIdx}`}
+                                    className="rounded border border-slate-200 bg-slate-50 px-2 py-2"
+                                    onDragOver={(event) => event.preventDefault()}
+                                    onDrop={(event) => {
+                                      event.preventDefault()
+                                      const userId = Number(event.dataTransfer.getData('text/plain') || dragStudentUserId)
+                                      if (userId) movePreviewStudent(userId, proj.project_id)
+                                      setDragStudentUserId(null)
+                                    }}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="text-xs font-medium text-slate-700">Team {teamIdx + 1}</div>
+                                      <div className="text-[11px] text-slate-500">{team.length} members</div>
+                                    </div>
+                                    <div className="mt-1 space-y-1">
+                                      {(team || []).map((member) => (
+                                        <div
+                                          key={`${proj.project_id}-${teamIdx}-${member.user_id}`}
+                                          className={
+                                            member.is_preassigned
+                                              ? 'text-xs rounded-full border border-amber-300 bg-amber-100 text-amber-900 px-2 py-1 cursor-grab'
+                                              : 'text-xs rounded-full border border-blue-200 bg-blue-50 text-blue-900 px-2 py-1 cursor-grab'
+                                          }
+                                          draggable
+                                          onDragStart={(event) => {
+                                            setDragStudentUserId(member.user_id)
+                                            event.dataTransfer.setData('text/plain', String(member.user_id))
+                                          }}
+                                          onDragEnd={() => setDragStudentUserId(null)}
+                                        >
+                                          {(member.display_name || member.email || `User ${member.user_id}`)}
+                                          <span className="text-slate-500"> · score {member.assigned_score}</span>
+                                          {member.assigned_rank ? (
+                                            <span className="text-slate-500"> · rank #{member.assigned_rank}</span>
+                                          ) : null}
+                                          {member.is_preassigned ? (
+                                            <span className="text-amber-700"> · preassigned</span>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
-                                  <div className="mt-1 space-y-1">
-                                    {(team || []).map((member) => (
-                                      <div
-                                        key={`${proj.project_id}-${teamIdx}-${member.user_id}`}
-                                        className={
-                                          member.is_preassigned
-                                            ? 'text-xs rounded-full border border-amber-300 bg-amber-100 text-amber-900 px-2 py-1 cursor-grab'
-                                            : 'text-xs rounded-full border border-blue-200 bg-blue-50 text-blue-900 px-2 py-1 cursor-grab'
-                                        }
-                                        draggable
-                                        onDragStart={(event) => {
-                                          setDragStudentUserId(member.user_id)
-                                          event.dataTransfer.setData('text/plain', String(member.user_id))
-                                        }}
-                                        onDragEnd={() => setDragStudentUserId(null)}
-                                      >
-                                        {(member.display_name || member.email || `User ${member.user_id}`)}
-                                        <span className="text-slate-500"> · score {member.assigned_score}</span>
-                                        {member.assigned_rank ? (
-                                          <span className="text-slate-500"> · rank #{member.assigned_rank}</span>
-                                        ) : null}
-                                        {member.is_preassigned ? (
-                                          <span className="text-amber-700"> · preassigned</span>
-                                        ) : null}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
+                          )
+                        })}
+                      </div>
+
+                      <div
+                        className="rounded-card border border-red-200 bg-red-50 p-3 h-fit xl:sticky xl:top-0"
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => {
+                          event.preventDefault()
+                          const userId = Number(event.dataTransfer.getData('text/plain') || dragStudentUserId)
+                          if (userId) movePreviewStudent(userId, null)
+                          setDragStudentUserId(null)
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-red-700">Removed Students</div>
+                          <div className="rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] text-red-700">
+                            {Array.isArray(previewResult.unassigned_students) ? previewResult.unassigned_students.length : 0}
                           </div>
-                        )
-                      })}
+                        </div>
+                        <div className="mt-1 text-[11px] text-red-700/90">Drop a team member here to remove from projects, then drag back into any project.</div>
+                        {Array.isArray(previewResult.unassigned_students) && previewResult.unassigned_students.length > 0 ? (
+                          <div className="mt-3 space-y-1.5 max-h-[50vh] overflow-auto pr-1">
+                            {previewResult.unassigned_students.map((member) => (
+                              <div
+                                key={`removed-${member.user_id}`}
+                                className={
+                                  member.is_preassigned
+                                    ? 'text-xs rounded-full border border-amber-300 bg-amber-100 text-amber-900 px-2 py-1 cursor-grab'
+                                    : 'text-xs rounded-full border border-red-300 bg-white text-red-700 px-2 py-1 cursor-grab'
+                                }
+                                draggable
+                                onDragStart={(event) => {
+                                  setDragStudentUserId(member.user_id)
+                                  event.dataTransfer.setData('text/plain', String(member.user_id))
+                                }}
+                                onDragEnd={() => setDragStudentUserId(null)}
+                              >
+                                {member.display_name || member.email || `User ${member.user_id}`}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-3 rounded border border-dashed border-red-300 bg-white/70 px-2 py-4 text-center text-xs text-red-700">
+                            No removed students yet
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

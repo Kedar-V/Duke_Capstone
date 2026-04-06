@@ -821,8 +821,6 @@ def _solve_assignment_ilp(
     if not user_ids or not project_ids:
         return {}, {}, {}, set(), {pid: [] for pid in selected_project_ids}, warnings
 
-    team_upper_bound = max(1, math.ceil(len(user_ids) / max(min_team_size, 1)))
-
     problem = pl.LpProblem("capstone_assignment", pl.LpMaximize)
 
     x: dict[tuple[int, int], object] = {
@@ -831,10 +829,7 @@ def _solve_assignment_ilp(
         for pid in project_ids
     }
     t: dict[int, object] = {
-        pid: pl.LpVariable(
-            f"t_{pid}", lowBound=0, upBound=team_upper_bound, cat=pl.LpInteger
-        )
-        for pid in project_ids
+        pid: pl.LpVariable(f"t_{pid}", cat=pl.LpBinary) for pid in project_ids
     }
 
     for uid in user_ids:
@@ -848,11 +843,16 @@ def _solve_assignment_ilp(
             problem += x[(uid, pid)] <= t[pid]
 
     preassigned_user_ids: set[int] = set()
+    preassigned_project_by_user: dict[int, int] = {}
     for uid, pid in normalized_preassigned:
         if uid not in user_id_set or pid not in project_ids:
             continue
         preassigned_user_ids.add(uid)
+        preassigned_project_by_user[uid] = pid
         problem += x[(uid, pid)] == 1
+        for other_pid in project_ids:
+            if other_pid != pid:
+                problem += x[(uid, other_pid)] == 0
 
     avoid_pair_set: set[tuple[int, int]] = set()
     for uid, teammate_ids in avoids.items():
@@ -943,12 +943,21 @@ def _solve_assignment_ilp(
         warnings.append(
             f"ILP could not find a feasible assignment (status: {status_name})."
         )
+        if preassigned_project_by_user:
+            warnings.append(
+                "Returning locked preassignments only; remaining students could not be assigned under current constraints."
+            )
+        locked_users_by_project: dict[int, list[int]] = {pid: [] for pid in project_ids}
+        for uid, pid in preassigned_project_by_user.items():
+            locked_users_by_project.setdefault(pid, []).append(uid)
+        for pid in project_ids:
+            locked_users_by_project[pid].sort()
         return (
-            {},
+            dict(preassigned_project_by_user),
             {},
             {},
             preassigned_user_ids,
-            {pid: [] for pid in project_ids},
+            locked_users_by_project,
             warnings,
         )
 
@@ -1037,7 +1046,7 @@ def _build_assignment_preview(
         integrity = _build_integrity_report(
             total_students=len(students),
             projects_considered=len(projects),
-            projects_needed=max(1, math.ceil(len(students) / max(target_team_size, 1))),
+            projects_needed=max(1, math.ceil(len(students) / max(max_team_size, 1))),
             ranking_map={},
             submitted_user_ids=set(),
             project_demand={row.project_id: 0 for row in projects},
@@ -1109,7 +1118,7 @@ def _build_assignment_preview(
             if project_id in project_demand:
                 project_demand[project_id] += max(11 - rank, 0)
 
-    needed_projects = max(1, math.ceil(len(students) / max(target_team_size, 1)))
+    needed_projects = max(1, math.ceil(len(students) / max(max_team_size, 1)))
     sorted_project_ids = sorted(
         project_demand.keys(),
         key=lambda pid: (project_demand.get(pid, 0), -pid),
@@ -1144,12 +1153,11 @@ def _build_assignment_preview(
         if project_id not in selected_project_ids:
             selected_project_ids.append(project_id)
 
-    capacity_by_project = {pid: max_team_size for pid in selected_project_ids}
-    while sum(capacity_by_project.values()) < len(students):
-        best_project_id = max(
-            selected_project_ids, key=lambda pid: project_demand.get(pid, 0)
+    max_capacity = len(selected_project_ids) * max_team_size
+    if max_capacity < len(students):
+        warnings.append(
+            f"Only {len(selected_project_ids)} projects are selected with one-team-per-project capacity ({max_capacity} seats) for {len(students)} students."
         )
-        capacity_by_project[best_project_id] += max_team_size
 
     student_email_to_user_id = {
         (row.email or "").strip().lower(): row.id for row in students if row.email
@@ -1232,29 +1240,20 @@ def _build_assignment_preview(
     for project_id in selected_project_ids:
         project = project_by_id[project_id]
         member_user_ids = users_by_project[project_id]
-        teams: list[list[AssignmentPreviewStudentOut]] = []
-        start = 0
-        for chunk_size in _partition_team_sizes(
-            len(member_user_ids),
-            min_size=min_team_size,
-            max_size=max_team_size,
-            target_size=target_team_size,
-        ):
-            chunk = member_user_ids[start : start + chunk_size]
-            start += chunk_size
-            teams.append(
-                [
-                    AssignmentPreviewStudentOut(
-                        user_id=uid,
-                        email=user_by_id[uid].email,
-                        display_name=user_by_id[uid].display_name,
-                        assigned_score=user_scores.get(uid, 0),
-                        assigned_rank=user_assigned_rank.get(uid),
-                        is_preassigned=uid in preassigned_user_ids,
-                    )
-                    for uid in chunk
-                ]
+        single_team = [
+            AssignmentPreviewStudentOut(
+                user_id=uid,
+                email=user_by_id[uid].email,
+                display_name=user_by_id[uid].display_name,
+                assigned_score=user_scores.get(uid, 0),
+                assigned_rank=user_assigned_rank.get(uid),
+                is_preassigned=uid in preassigned_user_ids,
             )
+            for uid in member_user_ids
+        ]
+        teams: list[list[AssignmentPreviewStudentOut]] = (
+            [single_team] if single_team else []
+        )
 
         project_assignments.append(
             AssignmentPreviewProjectOut(
@@ -2960,7 +2959,18 @@ def list_partner_preferences(
                 raw_comment = payload.get("comment") or payload.get("avoid_reason")
                 comment = str(raw_comment).strip() if raw_comment else None
             except Exception:
-                continue
+                try:
+                    payload = json.loads(payload_ciphertext)
+                    sid = (
+                        int(payload.get("student_id"))
+                        if payload.get("student_id")
+                        else sid
+                    )
+                    pref_value = payload.get("preference") or pref_value
+                    raw_comment = payload.get("comment") or payload.get("avoid_reason")
+                    comment = str(raw_comment).strip() if raw_comment else None
+                except Exception:
+                    continue
 
         if sid is None or pref_value not in {"want", "avoid"}:
             continue

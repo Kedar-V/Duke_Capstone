@@ -283,6 +283,8 @@ cd backend && alembic -c alembic.ini stamp head
 **Option C — Seed with sample data:**
 ```bash
 psql "$DATABASE_URL" -f seed.sql
+psql "$DATABASE_URL" -f seed_student_rankings_ratings.sql
+psql "$DATABASE_URL" -f seed_teammate_preferences.sql
 ```
 
 ## Deployment
