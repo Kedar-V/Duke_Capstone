@@ -423,7 +423,8 @@ export default function AdminPage() {
   const [ruleExplainItem, setRuleExplainItem] = useState(null)
   const [ruleName, setRuleName] = useState('')
   const [ruleIsActive, setRuleIsActive] = useState(true)
-  const [ruleTeamSize, setRuleTeamSize] = useState('4')
+  const [ruleMinTeamSize, setRuleMinTeamSize] = useState('3')
+  const [ruleMaxTeamSize, setRuleMaxTeamSize] = useState('5')
   const [ruleEnforceSameCohort, setRuleEnforceSameCohort] = useState(true)
   const [ruleHardAvoid, setRuleHardAvoid] = useState(true)
   const [ruleMaxLowPreference, setRuleMaxLowPreference] = useState('1')
@@ -1656,7 +1657,8 @@ export default function AdminPage() {
     setRuleName(item.name || '')
     setRuleFormCohortId(item.cohort_id ? String(item.cohort_id) : '')
     setRuleIsActive(Boolean(item.is_active))
-    setRuleTeamSize(String(item.team_size ?? 4))
+    setRuleMinTeamSize(String(item.min_team_size ?? 3))
+    setRuleMaxTeamSize(String(item.max_team_size ?? 5))
     setRuleEnforceSameCohort(Boolean(item.enforce_same_cohort))
     setRuleHardAvoid(Boolean(item.hard_avoid))
     setRuleMaxLowPreference(String(item.max_low_preference_per_team ?? 1))
@@ -1692,7 +1694,9 @@ export default function AdminPage() {
       name: ruleName || 'Draft Assignment Rule',
       cohort_id: ruleFormCohortId ? Number(ruleFormCohortId) : null,
       is_active: Boolean(ruleIsActive),
-      team_size: Number(ruleTeamSize || 4),
+      min_team_size: Number(ruleMinTeamSize || 3),
+      max_team_size: Number(ruleMaxTeamSize || 5),
+      team_size: Math.round((Number(ruleMinTeamSize || 3) + Number(ruleMaxTeamSize || 5)) / 2),
       enforce_same_cohort: Boolean(ruleEnforceSameCohort),
       hard_avoid: Boolean(ruleHardAvoid),
       max_low_preference_per_team: Number(ruleMaxLowPreference || 1),
@@ -1773,7 +1777,7 @@ export default function AdminPage() {
         title: 'Scope and Team Structure',
         points: [
           `Scope: ${item.cohort_id ? `Cohort ${item.cohort_id}` : 'Global across cohorts'}. Only in-scope students/projects are considered.`,
-          `Target team size is ${item.team_size}. Capacity is expanded in multiples of team size until all assignable students can fit.`,
+          `Team size range is ${item.min_team_size ?? 3}-${item.max_team_size ?? 5} (target ${item.team_size ?? 4}). Capacity expands using this range until all assignable students can fit.`,
           `${item.enforce_same_cohort ? 'Same-cohort assignment is enforced when this rule has a cohort scope.' : 'Cross-cohort assignment is allowed if needed by scope.'}`,
           `Project selection starts from demand: projects ranked more highly and more often are prioritized first.`,
           'Students with submitted rankings are processed before students without rankings.',
@@ -1830,7 +1834,8 @@ export default function AdminPage() {
     setRuleName('')
     setRuleFormCohortId('')
     setRuleIsActive(true)
-    setRuleTeamSize('4')
+    setRuleMinTeamSize('3')
+    setRuleMaxTeamSize('5')
     setRuleEnforceSameCohort(true)
     setRuleHardAvoid(true)
     setRuleMaxLowPreference('1')
@@ -1843,11 +1848,17 @@ export default function AdminPage() {
   }
 
   function parseRuleForm() {
+    const parsedMinTeamSize = Number(ruleMinTeamSize)
+    const parsedMaxTeamSize = Number(ruleMaxTeamSize)
+    const parsedTargetTeamSize = Math.round((parsedMinTeamSize + parsedMaxTeamSize) / 2)
+
     const payload = {
       name: ruleName.trim(),
       cohort_id: ruleFormCohortId ? Number(ruleFormCohortId) : null,
       is_active: Boolean(ruleIsActive),
-      team_size: Number(ruleTeamSize),
+      team_size: parsedTargetTeamSize,
+      min_team_size: parsedMinTeamSize,
+      max_team_size: parsedMaxTeamSize,
       enforce_same_cohort: Boolean(ruleEnforceSameCohort),
       hard_avoid: Boolean(ruleHardAvoid),
       max_low_preference_per_team: Number(ruleMaxLowPreference),
@@ -1859,8 +1870,17 @@ export default function AdminPage() {
     }
 
     if (!payload.name) return { error: 'Rule config name is required.' }
-    if (Number.isNaN(payload.team_size) || payload.team_size < 3 || payload.team_size > 5) {
-      return { error: 'Team size must be between 3 and 5.' }
+    if (Number.isNaN(payload.min_team_size) || payload.min_team_size < 3 || payload.min_team_size > 5) {
+      return { error: 'Minimum team size must be between 3 and 5.' }
+    }
+    if (Number.isNaN(payload.max_team_size) || payload.max_team_size < 3 || payload.max_team_size > 5) {
+      return { error: 'Maximum team size must be between 3 and 5.' }
+    }
+    if (payload.min_team_size > payload.max_team_size) {
+      return { error: 'Minimum team size cannot be greater than maximum team size.' }
+    }
+    if (Number.isNaN(payload.team_size) || payload.team_size < payload.min_team_size || payload.team_size > payload.max_team_size) {
+      return { error: 'Derived target team size is invalid for selected range.' }
     }
     if (
       Number.isNaN(payload.max_low_preference_per_team) ||
@@ -2957,7 +2977,7 @@ export default function AdminPage() {
                     {activeAssignmentRule ? (
                       <div className="mt-1">
                         <span className="font-medium">{activeAssignmentRule.name}</span>
-                        <span className="text-slate-500"> · Team size {activeAssignmentRule.team_size}</span>
+                        <span className="text-slate-500"> · Team range {activeAssignmentRule.min_team_size ?? 3}-{activeAssignmentRule.max_team_size ?? 5}</span>
                       </div>
                     ) : (
                       <div className="mt-1 text-slate-500">No active config in this scope.</div>
@@ -2982,7 +3002,7 @@ export default function AdminPage() {
                               Scope: {rule.cohort_id ? `Cohort ${rule.cohort_id}` : 'Global'}
                             </div>
                             <div className="text-xs text-slate-400">
-                              Team {rule.team_size} · Weights {rule.weight_project_preference}/{rule.weight_project_rating}/{rule.weight_mutual_want}
+                              Team {rule.min_team_size ?? 3}-{rule.max_team_size ?? 5} · Weights {rule.weight_project_preference}/{rule.weight_project_rating}/{rule.weight_mutual_want}
                             </div>
                           </button>
                           <div className="flex items-center gap-2">
@@ -3048,9 +3068,16 @@ export default function AdminPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <div className="label">Team size</div>
-                        <input className="input-base" type="number" min="3" max="5" value={ruleTeamSize} onChange={(e) => setRuleTeamSize(e.target.value)} />
+                        <div className="label">Min team size</div>
+                        <input className="input-base" type="number" min="3" max="5" value={ruleMinTeamSize} onChange={(e) => setRuleMinTeamSize(e.target.value)} />
                       </div>
+                      <div>
+                        <div className="label">Max team size</div>
+                        <input className="input-base" type="number" min="3" max="5" value={ruleMaxTeamSize} onChange={(e) => setRuleMaxTeamSize(e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
                         <div className="label">Max low preference/team</div>
                         <input className="input-base" type="number" min="0" max="8" value={ruleMaxLowPreference} onChange={(e) => setRuleMaxLowPreference(e.target.value)} />

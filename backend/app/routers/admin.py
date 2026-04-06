@@ -243,6 +243,8 @@ def _ensure_assignment_rule_schema(db: Session) -> None:
               cohort_id BIGINT REFERENCES cohorts(id) ON DELETE SET NULL,
               is_active BOOLEAN NOT NULL DEFAULT FALSE,
               team_size INTEGER NOT NULL DEFAULT 4 CHECK (team_size BETWEEN 2 AND 8),
+                            min_team_size INTEGER NOT NULL DEFAULT 3 CHECK (min_team_size BETWEEN 2 AND 8),
+                            max_team_size INTEGER NOT NULL DEFAULT 5 CHECK (max_team_size BETWEEN 2 AND 8),
               enforce_same_cohort BOOLEAN NOT NULL DEFAULT TRUE,
               hard_avoid BOOLEAN NOT NULL DEFAULT TRUE,
               max_low_preference_per_team INTEGER NOT NULL DEFAULT 1 CHECK (max_low_preference_per_team BETWEEN 0 AND 8),
@@ -257,7 +259,8 @@ def _ensure_assignment_rule_schema(db: Session) -> None:
               created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
               updated_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                            CHECK (min_team_size <= team_size AND team_size <= max_team_size)
             )
             """
         )
@@ -305,6 +308,27 @@ def _ensure_assignment_rule_schema(db: Session) -> None:
             "ALTER TABLE assignment_rule_configs ADD COLUMN IF NOT EXISTS weight_project_rating INTEGER NOT NULL DEFAULT 15"
         )
     )
+    db.execute(
+        text(
+            "ALTER TABLE assignment_rule_configs ADD COLUMN IF NOT EXISTS min_team_size INTEGER NOT NULL DEFAULT 3"
+        )
+    )
+    db.execute(
+        text(
+            "ALTER TABLE assignment_rule_configs ADD COLUMN IF NOT EXISTS max_team_size INTEGER NOT NULL DEFAULT 5"
+        )
+    )
+    db.execute(
+        text(
+            """
+            UPDATE assignment_rule_configs
+            SET
+              min_team_size = LEAST(COALESCE(team_size, 4), 3),
+              max_team_size = GREATEST(COALESCE(team_size, 4), 5)
+            WHERE min_team_size IS NULL OR max_team_size IS NULL
+            """
+        )
+    )
 
     db.execute(
         text(
@@ -314,6 +338,8 @@ def _ensure_assignment_rule_schema(db: Session) -> None:
               cohort_id,
               is_active,
               team_size,
+              min_team_size,
+              max_team_size,
               enforce_same_cohort,
               hard_avoid,
               max_low_preference_per_team,
@@ -331,6 +357,8 @@ def _ensure_assignment_rule_schema(db: Session) -> None:
               NULL,
               TRUE,
               4,
+              3,
+              5,
               TRUE,
               TRUE,
               1,
@@ -526,6 +554,8 @@ def _serialize_rule_config(row: AssignmentRuleConfig) -> AssignmentRuleConfigOut
         cohort_id=row.cohort_id,
         is_active=bool(row.is_active),
         team_size=row.team_size,
+        min_team_size=row.min_team_size,
+        max_team_size=row.max_team_size,
         enforce_same_cohort=bool(row.enforce_same_cohort),
         hard_avoid=bool(row.hard_avoid),
         max_low_preference_per_team=row.max_low_preference_per_team,
@@ -692,6 +722,8 @@ def _fingerprint_assignment_inputs(
             "id": int(rule.id),
             "cohort_id": int(rule.cohort_id) if rule.cohort_id is not None else None,
             "team_size": int(rule.team_size),
+            "min_team_size": int(getattr(rule, "min_team_size", 3)),
+            "max_team_size": int(getattr(rule, "max_team_size", 5)),
             "enforce_same_cohort": bool(rule.enforce_same_cohort),
             "hard_avoid": bool(rule.hard_avoid),
             "max_low_preference_per_team": int(rule.max_low_preference_per_team),
@@ -970,8 +1002,10 @@ def _build_assignment_preview(
     _ensure_project_status_schema(db)
     cohort_id = rule.cohort_id
     warnings: list[str] = []
-    min_team_size = 3
-    max_team_size = 5
+    min_team_size = _clamp_team_size(getattr(rule, "min_team_size", 3), 3, 5)
+    max_team_size = _clamp_team_size(getattr(rule, "max_team_size", 5), 3, 5)
+    if max_team_size < min_team_size:
+        max_team_size = min_team_size
     target_team_size = _clamp_team_size(rule.team_size, min_team_size, max_team_size)
 
     users_stmt = (
@@ -1003,7 +1037,7 @@ def _build_assignment_preview(
         integrity = _build_integrity_report(
             total_students=len(students),
             projects_considered=len(projects),
-            projects_needed=max(1, math.ceil(len(students) / max(rule.team_size, 1))),
+            projects_needed=max(1, math.ceil(len(students) / max(target_team_size, 1))),
             ranking_map={},
             submitted_user_ids=set(),
             project_demand={row.project_id: 0 for row in projects},
@@ -2404,6 +2438,8 @@ def create_assignment_rule(
         cohort_id=payload.cohort_id,
         is_active=payload.is_active,
         team_size=payload.team_size,
+        min_team_size=payload.min_team_size,
+        max_team_size=payload.max_team_size,
         enforce_same_cohort=payload.enforce_same_cohort,
         hard_avoid=payload.hard_avoid,
         max_low_preference_per_team=payload.max_low_preference_per_team,
@@ -2415,6 +2451,14 @@ def create_assignment_rule(
         extra_rules=payload.extra_rules,
         created_by_user_id=current_user.id,
         updated_by_user_id=current_user.id,
+    )
+    if row.min_team_size > row.max_team_size:
+        raise HTTPException(
+            status_code=400,
+            detail="min_team_size must be less than or equal to max_team_size",
+        )
+    row.team_size = _clamp_team_size(
+        row.team_size, row.min_team_size, row.max_team_size
     )
     db.add(row)
     db.flush()
@@ -2467,6 +2511,14 @@ def update_assignment_rule(
         if payload.team_size is None:
             raise HTTPException(status_code=400, detail="team_size cannot be null")
         row.team_size = payload.team_size
+    if "min_team_size" in provided_fields:
+        if payload.min_team_size is None:
+            raise HTTPException(status_code=400, detail="min_team_size cannot be null")
+        row.min_team_size = payload.min_team_size
+    if "max_team_size" in provided_fields:
+        if payload.max_team_size is None:
+            raise HTTPException(status_code=400, detail="max_team_size cannot be null")
+        row.max_team_size = payload.max_team_size
     if "enforce_same_cohort" in provided_fields:
         if payload.enforce_same_cohort is None:
             raise HTTPException(
@@ -2513,6 +2565,15 @@ def update_assignment_rule(
         if payload.is_active is None:
             raise HTTPException(status_code=400, detail="is_active cannot be null")
         row.is_active = bool(payload.is_active)
+
+    if row.min_team_size > row.max_team_size:
+        raise HTTPException(
+            status_code=400,
+            detail="min_team_size must be less than or equal to max_team_size",
+        )
+    row.team_size = _clamp_team_size(
+        row.team_size, row.min_team_size, row.max_team_size
+    )
 
     row.updated_by_user_id = current_user.id
     row.updated_at = func.now()

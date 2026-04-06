@@ -75,7 +75,9 @@ class Student(Base):
     __tablename__ = "students"
 
     id = Column(BigInteger, primary_key=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), unique=True)
+    user_id = Column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), unique=True
+    )
     full_name = Column(Text, nullable=False)
     email = Column(Text, unique=True)
     program = Column(Text)
@@ -335,7 +337,21 @@ class AdminAuditLog(Base):
 class AssignmentRuleConfig(Base):
     __tablename__ = "assignment_rule_configs"
     __table_args__ = (
-        CheckConstraint("team_size between 2 and 8", name="ck_assignment_rule_team_size"),
+        CheckConstraint(
+            "team_size between 2 and 8", name="ck_assignment_rule_team_size"
+        ),
+        CheckConstraint(
+            "min_team_size between 2 and 8",
+            name="ck_assignment_rule_min_team_size",
+        ),
+        CheckConstraint(
+            "max_team_size between 2 and 8",
+            name="ck_assignment_rule_max_team_size",
+        ),
+        CheckConstraint(
+            "min_team_size <= team_size AND team_size <= max_team_size",
+            name="ck_assignment_rule_team_size_range",
+        ),
         CheckConstraint(
             "max_low_preference_per_team between 0 and 8",
             name="ck_assignment_rule_max_low_pref",
@@ -372,6 +388,8 @@ class AssignmentRuleConfig(Base):
     is_active = Column(Boolean, nullable=False, server_default="false")
 
     team_size = Column(Integer, nullable=False, server_default="4")
+    min_team_size = Column(Integer, nullable=False, server_default="3")
+    max_team_size = Column(Integer, nullable=False, server_default="5")
     enforce_same_cohort = Column(Boolean, nullable=False, server_default="true")
     hard_avoid = Column(Boolean, nullable=False, server_default="true")
     max_low_preference_per_team = Column(Integer, nullable=False, server_default="1")

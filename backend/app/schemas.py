@@ -395,6 +395,8 @@ class AssignmentRuleConfigIn(BaseModel):
     cohort_id: Optional[int] = None
     is_active: bool = False
     team_size: int = Field(default=4, ge=3, le=5)
+    min_team_size: int = Field(default=3, ge=3, le=5)
+    max_team_size: int = Field(default=5, ge=3, le=5)
     enforce_same_cohort: bool = True
     hard_avoid: bool = True
     max_low_preference_per_team: int = Field(default=1, ge=0, le=8)
@@ -411,6 +413,8 @@ class AssignmentRuleConfigUpdateIn(BaseModel):
     cohort_id: Optional[int] = None
     is_active: Optional[bool] = None
     team_size: Optional[int] = Field(default=None, ge=3, le=5)
+    min_team_size: Optional[int] = Field(default=None, ge=3, le=5)
+    max_team_size: Optional[int] = Field(default=None, ge=3, le=5)
     enforce_same_cohort: Optional[bool] = None
     hard_avoid: Optional[bool] = None
     max_low_preference_per_team: Optional[int] = Field(default=None, ge=0, le=8)
@@ -428,6 +432,8 @@ class AssignmentRuleConfigOut(BaseModel):
     cohort_id: Optional[int] = None
     is_active: bool
     team_size: int
+    min_team_size: int
+    max_team_size: int
     enforce_same_cohort: bool
     hard_avoid: bool
     max_low_preference_per_team: int
@@ -513,8 +519,12 @@ class AssignmentPreviewOut(BaseModel):
     projects_selected: int
     unassigned_count: int
     warnings: List[str] = Field(default_factory=list)
-    quality: AssignmentPreviewQualityOut = Field(default_factory=AssignmentPreviewQualityOut)
-    integrity: AssignmentPreviewIntegrityOut = Field(default_factory=AssignmentPreviewIntegrityOut)
+    quality: AssignmentPreviewQualityOut = Field(
+        default_factory=AssignmentPreviewQualityOut
+    )
+    integrity: AssignmentPreviewIntegrityOut = Field(
+        default_factory=AssignmentPreviewIntegrityOut
+    )
     generated_at: datetime
     project_assignments: List[AssignmentPreviewProjectOut] = Field(default_factory=list)
     unassigned_students: List[AssignmentPreviewStudentOut] = Field(default_factory=list)
@@ -527,8 +537,12 @@ class AssignmentPreviewRunOut(BaseModel):
     initiated_by_user_id: int
     input_fingerprint: str
     created_at: datetime
-    quality: AssignmentPreviewQualityOut = Field(default_factory=AssignmentPreviewQualityOut)
-    integrity: AssignmentPreviewIntegrityOut = Field(default_factory=AssignmentPreviewIntegrityOut)
+    quality: AssignmentPreviewQualityOut = Field(
+        default_factory=AssignmentPreviewQualityOut
+    )
+    integrity: AssignmentPreviewIntegrityOut = Field(
+        default_factory=AssignmentPreviewIntegrityOut
+    )
     warnings: List[str] = Field(default_factory=list)
 
 
