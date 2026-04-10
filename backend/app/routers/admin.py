@@ -1918,6 +1918,7 @@ def list_projects(
 ):
     _ensure_company_schema(db)
     _ensure_project_status_schema(db)
+    _ensure_project_comment_schema(db)
     stmt = select(ClientIntakeForm).where(ClientIntakeForm.deleted_at.is_(None))
     stmt = stmt.order_by(ClientIntakeForm.created_at.desc())
     if cohort_id:
@@ -1926,6 +1927,26 @@ def list_projects(
 
     project_ids = [row.project_id for row in rows]
     company_map = _project_company_map(db, project_ids)
+    comment_counts = {}
+    if project_ids:
+        comment_rows = db.execute(
+            select(
+                ProjectComment.project_id,
+                func.count(ProjectComment.id).label("total_count"),
+                func.count(ProjectComment.id)
+                .filter(ProjectComment.is_resolved.is_(False))
+                .label("unresolved_count"),
+            )
+            .where(ProjectComment.project_id.in_(project_ids))
+            .group_by(ProjectComment.project_id)
+        ).all()
+        comment_counts = {
+            int(project_id): {
+                "total": int(total_count or 0),
+                "unresolved": int(unresolved_count or 0),
+            }
+            for project_id, total_count, unresolved_count in comment_rows
+        }
 
     return [
         AdminProjectOut(
@@ -1936,15 +1957,27 @@ def list_projects(
             project_title=row.project_title,
             project_summary=row.project_summary,
             project_description=row.project_description,
+            minimum_deliverables=row.minimum_deliverables,
+            stretch_goals=row.stretch_goals,
+            long_term_impact=row.long_term_impact,
+            scope_clarity=row.scope_clarity,
+            scope_clarity_other=row.scope_clarity_other,
+            publication_potential=row.publication_potential,
+            data_access=row.data_access,
             contact_name=row.contact_name,
             contact_email=row.contact_email,
             required_skills=row.required_skills or [],
+            required_skills_other=row.required_skills_other,
             technical_domains=row.technical_domains or [],
+            supplementary_documents=row.supplementary_documents or [],
+            video_links=row.video_links or [],
             cover_image_url=_project_cover_image_url(row),
             cohort_id=row.cohort_id,
             project_status=_normalize_project_status(row.project_status),
             published_at=row.published_at,
             archived_at=row.archived_at,
+            total_comment_count=comment_counts.get(row.project_id, {}).get("total", 0),
+            unresolved_comment_count=comment_counts.get(row.project_id, {}).get("unresolved", 0),
         )
         for row in rows
     ]
@@ -1983,8 +2016,18 @@ def create_project(
         project_title=payload.project_title,
         project_summary=payload.project_summary,
         project_description=payload.project_description,
+        minimum_deliverables=payload.minimum_deliverables,
+        stretch_goals=payload.stretch_goals,
+        long_term_impact=payload.long_term_impact,
+        scope_clarity=payload.scope_clarity,
+        scope_clarity_other=payload.scope_clarity_other,
+        publication_potential=payload.publication_potential,
+        data_access=payload.data_access,
         required_skills=payload.required_skills,
+        required_skills_other=payload.required_skills_other,
         technical_domains=payload.technical_domains,
+        supplementary_documents=payload.supplementary_documents,
+        video_links=payload.video_links,
         cohort_id=payload.cohort_id,
     )
     _apply_project_status_transition(row, payload.project_status)
@@ -2018,10 +2061,20 @@ def create_project(
         project_title=row.project_title,
         project_summary=row.project_summary,
         project_description=row.project_description,
+        minimum_deliverables=row.minimum_deliverables,
+        stretch_goals=row.stretch_goals,
+        long_term_impact=row.long_term_impact,
+        scope_clarity=row.scope_clarity,
+        scope_clarity_other=row.scope_clarity_other,
+        publication_potential=row.publication_potential,
+        data_access=row.data_access,
         contact_name=row.contact_name,
         contact_email=row.contact_email,
         required_skills=row.required_skills or [],
+        required_skills_other=row.required_skills_other,
         technical_domains=row.technical_domains or [],
+        supplementary_documents=row.supplementary_documents or [],
+        video_links=row.video_links or [],
         cover_image_url=_project_cover_image_url(row),
         cohort_id=row.cohort_id,
         project_status=_normalize_project_status(row.project_status),
@@ -2075,10 +2128,20 @@ def update_project(
     row.project_title = payload.project_title
     row.project_summary = payload.project_summary
     row.project_description = payload.project_description
+    row.minimum_deliverables = payload.minimum_deliverables
+    row.stretch_goals = payload.stretch_goals
+    row.long_term_impact = payload.long_term_impact
+    row.scope_clarity = payload.scope_clarity
+    row.scope_clarity_other = payload.scope_clarity_other
+    row.publication_potential = payload.publication_potential
+    row.data_access = payload.data_access
     row.contact_name = payload.contact_name
     row.contact_email = payload.contact_email
     row.required_skills = payload.required_skills
+    row.required_skills_other = payload.required_skills_other
     row.technical_domains = payload.technical_domains
+    row.supplementary_documents = payload.supplementary_documents
+    row.video_links = payload.video_links
     row.cohort_id = payload.cohort_id
     row.raw = _project_raw_with_cover_image(row.raw, payload.cover_image_url)
     _apply_project_status_transition(row, payload.project_status)
@@ -2121,10 +2184,20 @@ def update_project(
         project_title=row.project_title,
         project_summary=row.project_summary,
         project_description=row.project_description,
+        minimum_deliverables=row.minimum_deliverables,
+        stretch_goals=row.stretch_goals,
+        long_term_impact=row.long_term_impact,
+        scope_clarity=row.scope_clarity,
+        scope_clarity_other=row.scope_clarity_other,
+        publication_potential=row.publication_potential,
+        data_access=row.data_access,
         contact_name=row.contact_name,
         contact_email=row.contact_email,
         required_skills=row.required_skills or [],
+        required_skills_other=row.required_skills_other,
         technical_domains=row.technical_domains or [],
+        supplementary_documents=row.supplementary_documents or [],
+        video_links=row.video_links or [],
         cover_image_url=_project_cover_image_url(row),
         cohort_id=row.cohort_id,
         project_status=_normalize_project_status(row.project_status),
@@ -2830,6 +2903,41 @@ def list_saved_assignment_runs(
     return [_serialize_saved_run_row(saved) for saved in rows]
 
 
+@router.get(
+    "/assignment-rules/{config_id}/saved-runs/{run_id}",
+    response_model=AssignmentPreviewOut,
+)
+def get_saved_assignment_run(
+    config_id: int,
+    run_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    _ensure_assignment_rule_schema(db)
+    _rule_config_or_404(db, config_id)
+    row = db.execute(
+        text(
+            """
+            SELECT
+              id,
+              input_fingerprint,
+              preview_json
+            FROM assignment_saved_runs
+            WHERE id = :run_id
+              AND rule_config_id = :config_id
+            """
+        ),
+        {"run_id": run_id, "config_id": config_id},
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Saved assignment run not found")
+
+    preview_payload = row.preview_json if isinstance(row.preview_json, dict) else {}
+    preview = AssignmentPreviewOut(**preview_payload)
+    preview.input_fingerprint = row.input_fingerprint
+    return preview
+
+
 @router.get("/rankings/submissions", response_model=List[AdminRankingSubmissionOut])
 def list_ranking_submissions(
     cohort_id: Optional[int] = Query(default=None),
@@ -2918,6 +3026,24 @@ def list_partner_preferences(
         )
         student_map = {row.id: row for row in student_rows}
 
+    student_emails = {
+        str(row.email).strip().lower()
+        for row in student_map.values()
+        if row and row.email
+    }
+    student_profile_image_by_email: dict[str, Optional[str]] = {}
+    if student_emails:
+        student_user_rows = db.execute(
+            select(User.email, User.profile_image_url)
+            .where(User.deleted_at.is_(None))
+            .where(func.lower(User.email).in_(student_emails))
+        ).all()
+        student_profile_image_by_email = {
+            str(email).strip().lower(): profile_image_url
+            for email, profile_image_url in student_user_rows
+            if email
+        }
+
     want_by_user: dict[int, list[AdminPartnerChoiceOut]] = {uid: [] for uid in user_ids}
     avoid_by_user: dict[int, list[AdminPartnerChoiceOut]] = {
         uid: [] for uid in user_ids
@@ -2929,6 +3055,11 @@ def list_partner_preferences(
             student_id=sid,
             full_name=student.full_name if student else None,
             email=student.email if student else None,
+            profile_image_url=(
+                student_profile_image_by_email.get(str(student.email).strip().lower())
+                if student and student.email
+                else None
+            ),
             comment=comment,
         )
         if pref_value == "want":
@@ -2946,6 +3077,7 @@ def list_partner_preferences(
                 user_id=user.id,
                 email=user.email,
                 display_name=user.display_name,
+                profile_image_url=user.profile_image_url,
                 cohort_id=user.cohort_id,
                 want_count=len(wants),
                 avoid_count=len(avoids),

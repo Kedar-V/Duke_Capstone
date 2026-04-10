@@ -15,6 +15,18 @@ async function request(path, options) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
+    let detail = ''
+    if (text) {
+      try {
+        const parsed = JSON.parse(text)
+        detail = typeof parsed?.detail === 'string' ? parsed.detail : ''
+      } catch {
+        detail = ''
+      }
+    }
+    if (detail) {
+      throw new Error(detail)
+    }
     throw new Error(`HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ''}`)
   }
 
@@ -88,13 +100,6 @@ export function login({ email, password }) {
   return request('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
-  })
-}
-
-export function register({ email, password, displayName }) {
-  return request('/api/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({ email, password, display_name: displayName }),
   })
 }
 
@@ -421,6 +426,12 @@ export function adminListSavedAssignmentRuns(configId, { limit = 20 } = {}) {
   if (limit) qs.set('limit', String(limit))
   const suffix = qs.toString() ? `?${qs}` : ''
   return request(`/api/admin/assignment-rules/${encodeURIComponent(configId)}/saved-runs${suffix}`)
+}
+
+export function adminGetSavedAssignmentRun(configId, runId) {
+  return request(
+    `/api/admin/assignment-rules/${encodeURIComponent(configId)}/saved-runs/${encodeURIComponent(runId)}`
+  )
 }
 
 export function adminListPartnerPreferences({ cohortId, includeComments = true } = {}) {

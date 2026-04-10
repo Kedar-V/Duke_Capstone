@@ -481,7 +481,7 @@ on conflict (email) do update set
 -- Advance sequence past any explicitly-set ids so roster inserts don't collide
 select setval('users_id_seq', greatest((select max(id) from users), 1));
 
--- MIDS 2027 student roster users (password: devpassword)
+-- MIDS 2027 student roster users (no default password; first login flow sets password)
 with mids_2027_roster(display_name, email) as (
   values
     ('Jordan Andrew', 'jordan.andrew@duke.edu'),
@@ -527,11 +527,10 @@ with mids_2027_roster(display_name, email) as (
     ('Xinhao "Austin" Zhang', 'xinhao.zhang@duke.edu'),
     ('Xihan "Patrick" Zhu', 'xihan.zhu@duke.edu')
 )
-insert into users (email, display_name, password_hash, role, cohort_id)
+insert into users (email, display_name, role, cohort_id)
 select
   r.email,
   r.display_name,
-  '$pbkdf2-sha256$29000$FGLM.T/nPKfUupeSUup9rw$4R2VIU4NV./x9ycRFD2aaIJ0DFJTYoAcZ0aEwvR7uiU',
   'student',
   (select id from cohorts where name='MIDS 2027')
 from mids_2027_roster r
@@ -539,8 +538,7 @@ on conflict (email) do update set
   display_name = excluded.display_name,
   role = 'student',
   cohort_id = excluded.cohort_id,
-  deleted_at = null,
-  password_hash = coalesce(users.password_hash, excluded.password_hash);
+  deleted_at = null;
 
 
 insert into user_profiles (user_id, avg_match_score)

@@ -117,12 +117,6 @@ class LoginIn(BaseModel):
     password: str
 
 
-class RegisterIn(BaseModel):
-    email: str
-    password: str
-    display_name: Optional[str] = None
-
-
 class AuthOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -334,10 +328,20 @@ class AdminProjectIn(BaseModel):
     project_title: Optional[str] = None
     project_summary: Optional[str] = None
     project_description: Optional[str] = None
+    minimum_deliverables: Optional[str] = None
+    stretch_goals: Optional[str] = None
+    long_term_impact: Optional[str] = None
+    scope_clarity: Optional[str] = None
+    scope_clarity_other: Optional[str] = None
+    publication_potential: Optional[str] = None
+    data_access: Optional[str] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     required_skills: List[str] = Field(default_factory=list)
+    required_skills_other: Optional[str] = None
     technical_domains: List[str] = Field(default_factory=list)
+    supplementary_documents: List[str] = Field(default_factory=list)
+    video_links: List[str] = Field(default_factory=list)
     cover_image_url: Optional[str] = None
     cohort_id: Optional[int] = None
     project_status: str = Field(default="draft", pattern="^(draft|published|archived)$")
@@ -351,15 +355,27 @@ class AdminProjectOut(BaseModel):
     project_title: Optional[str] = None
     project_summary: Optional[str] = None
     project_description: Optional[str] = None
+    minimum_deliverables: Optional[str] = None
+    stretch_goals: Optional[str] = None
+    long_term_impact: Optional[str] = None
+    scope_clarity: Optional[str] = None
+    scope_clarity_other: Optional[str] = None
+    publication_potential: Optional[str] = None
+    data_access: Optional[str] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     required_skills: List[str] = Field(default_factory=list)
+    required_skills_other: Optional[str] = None
     technical_domains: List[str] = Field(default_factory=list)
+    supplementary_documents: List[str] = Field(default_factory=list)
+    video_links: List[str] = Field(default_factory=list)
     cover_image_url: Optional[str] = None
     cohort_id: Optional[int] = None
     project_status: str = "draft"
     published_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
+    total_comment_count: int = 0
+    unresolved_comment_count: int = 0
 
 
 class CohortStudentUploadOut(BaseModel):
@@ -571,6 +587,7 @@ class AdminPartnerChoiceOut(BaseModel):
     student_id: int
     full_name: Optional[str] = None
     email: Optional[str] = None
+    profile_image_url: Optional[str] = None
     comment: Optional[str] = None
 
 
@@ -578,6 +595,7 @@ class AdminPartnerPreferenceOut(BaseModel):
     user_id: int
     email: Optional[str] = None
     display_name: Optional[str] = None
+    profile_image_url: Optional[str] = None
     cohort_id: Optional[int] = None
     want_count: int = 0
     avoid_count: int = 0

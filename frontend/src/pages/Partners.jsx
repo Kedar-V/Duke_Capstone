@@ -198,16 +198,18 @@ export default function PartnersPage() {
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
         <AppHeader />
         <div className="card p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-3xl font-heading text-duke-900">Partners</h1>
               <p className="muted mt-1">Set up to 5 people you want to work with and up to 5 you want to avoid.</p>
               <p className="muted mt-1">Use the class list below and click Want or Avoid for each student. Both lists support optional comments.</p>
             </div>
-            <div className="text-right">
-              <div className="text-xs text-slate-500">Want {wantIds.length}/5</div>
-              <div className="text-xs text-slate-500">Avoid {avoidIds.length}/5</div>
-              <button type="button" className="btn-primary mt-2" onClick={handleSave} disabled={saving}>
+            <div className="w-full sm:w-auto sm:text-right">
+              <div className="flex items-center gap-3 text-xs text-slate-500 sm:justify-end">
+                <div>Want {wantIds.length}/5</div>
+                <div>Avoid {avoidIds.length}/5</div>
+              </div>
+              <button type="button" className="btn-primary mt-2 w-full sm:w-auto" onClick={handleSave} disabled={saving}>
                 {saving ? 'Saving…' : 'Save choices'}
               </button>
             </div>
@@ -215,7 +217,7 @@ export default function PartnersPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-6">
-          <div className="card p-5">
+          <div className="card p-5 order-2 lg:order-1" id="classmates-section">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-lg font-heading text-duke-900">Classmates</div>
@@ -232,7 +234,7 @@ export default function PartnersPage() {
                 onChange={(e) => setSearchText(e.target.value)}
               />
             </div>
-            <div className="mt-3 max-h-[520px] overflow-auto space-y-2 pr-1">
+            <div className="mt-3 space-y-2">
               {visibleStudents.length === 0 ? (
                 <div className="rounded-card border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
                   No students found for your cohort.
@@ -261,15 +263,15 @@ export default function PartnersPage() {
                             <div className="text-xs text-slate-500 truncate">{student.email || 'No email'} {student.program ? `· ${student.program}` : ''}</div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex w-full sm:w-auto items-center gap-2 flex-wrap sm:flex-nowrap">
                           <button
                             type="button"
                             className={
                               inWant
-                                ? 'px-3 py-1 rounded-full text-xs bg-emerald-600 text-white'
+                                ? 'px-3 py-1 rounded-full text-xs bg-emerald-600 text-white flex-1 sm:flex-none text-center'
                                 : wantDisabled
-                                  ? 'px-3 py-1 rounded-full text-xs bg-emerald-100 text-emerald-300 cursor-not-allowed'
-                                  : 'px-3 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                  ? 'px-3 py-1 rounded-full text-xs bg-emerald-100 text-emerald-300 cursor-not-allowed flex-1 sm:flex-none text-center'
+                                  : 'px-3 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 flex-1 sm:flex-none text-center'
                             }
                             disabled={wantDisabled}
                             onClick={() => setPreference(student.id, 'want')}
@@ -280,10 +282,10 @@ export default function PartnersPage() {
                             type="button"
                             className={
                               inAvoid
-                                ? 'px-3 py-1 rounded-full text-xs bg-rose-600 text-white'
+                                ? 'px-3 py-1 rounded-full text-xs bg-rose-600 text-white flex-1 sm:flex-none text-center'
                                 : avoidDisabled
-                                  ? 'px-3 py-1 rounded-full text-xs bg-rose-100 text-rose-300 cursor-not-allowed'
-                                  : 'px-3 py-1 rounded-full text-xs bg-rose-100 text-rose-700 hover:bg-rose-200'
+                                  ? 'px-3 py-1 rounded-full text-xs bg-rose-100 text-rose-300 cursor-not-allowed flex-1 sm:flex-none text-center'
+                                  : 'px-3 py-1 rounded-full text-xs bg-rose-100 text-rose-700 hover:bg-rose-200 flex-1 sm:flex-none text-center'
                             }
                             disabled={avoidDisabled}
                             onClick={() => setPreference(student.id, 'avoid')}
@@ -293,7 +295,7 @@ export default function PartnersPage() {
                           {(inWant || inAvoid) ? (
                             <button
                               type="button"
-                              className="px-3 py-1 rounded-full text-xs bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              className="px-3 py-1 rounded-full text-xs bg-slate-100 text-slate-600 hover:bg-slate-200 w-full sm:w-auto text-center"
                               onClick={() => setPreference(student.id, 'none')}
                             >
                               Clear
@@ -308,8 +310,17 @@ export default function PartnersPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="card p-4">
+          <div className="space-y-4 order-1 lg:order-2 lg:sticky lg:top-4 self-start">
+            <div className="card p-3 md:hidden">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick jump</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <a href="#want-section" className="px-3 py-1.5 rounded-full text-xs bg-emerald-100 text-emerald-800 hover:bg-emerald-200">Want comments</a>
+                <a href="#avoid-section" className="px-3 py-1.5 rounded-full text-xs bg-rose-100 text-rose-800 hover:bg-rose-200">Avoid comments</a>
+                <a href="#classmates-section" className="px-3 py-1.5 rounded-full text-xs bg-slate-100 text-slate-700 hover:bg-slate-200">Class list</a>
+              </div>
+            </div>
+
+            <div className="card p-4" id="want-section">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-lg font-heading text-duke-900">Want ({wantIds.length}/5)</div>
@@ -367,7 +378,7 @@ export default function PartnersPage() {
               </div>
             </div>
 
-            <div className="card p-4">
+            <div className="card p-4" id="avoid-section">
               <div>
                 <div className="text-lg font-heading text-duke-900">Avoid ({avoidIds.length}/5)</div>
                 <div className="text-sm text-slate-500">People you prefer not to work with</div>

@@ -9,6 +9,7 @@ import ProjectDisplayPage from './pages/ProjectDisplay'
 import AdminPage from './pages/Admin'
 import CartDrawer from './components/CartDrawer'
 import { getToken, getUser, onAuthChanged } from './auth'
+import { THEME_STORAGE_KEY, applyTheme, initTheme, resolveInitialTheme } from './theme'
 
 export default function App() {
   const [, setAuthVersion] = useState(0)
@@ -17,6 +18,21 @@ export default function App() {
     return onAuthChanged(() => {
       setAuthVersion((v) => v + 1)
     })
+  }, [])
+
+  useEffect(() => {
+    initTheme()
+
+    function onStorage(event) {
+      if (event.key !== THEME_STORAGE_KEY) return
+      const next = event.newValue === 'dark' || event.newValue === 'light'
+        ? event.newValue
+        : resolveInitialTheme()
+      applyTheme(next)
+    }
+
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const isAuthed = Boolean(getToken())

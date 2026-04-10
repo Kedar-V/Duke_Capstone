@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import logging
+import os
 from threading import Lock
 from typing import Dict
 
 
 # Placeholder OTP for now; swap to generated OTP when email provider is enabled.
-_DEFAULT_OTP = "0000"
+_DEFAULT_OTP = os.getenv("OTP_STATIC_CODE", "0000")
 _OTP_TTL_MINUTES = 10
 _MAX_ATTEMPTS = 5
+_OTP_FORWARD_TO_EMAIL = (
+    os.getenv("OTP_FORWARD_TO_EMAIL", "diwas.puri@duke.edu").strip().lower()
+)
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,8 +31,28 @@ class OtpProvider:
         return _DEFAULT_OTP
 
     def deliver_code(self, email: str, code: str) -> None:
-        # Future-ready extension point: send code via email/SMS provider.
-        _ = (email, code)
+        requested_email = (email or "").strip().lower()
+        routed_email = _OTP_FORWARD_TO_EMAIL or requested_email
+
+        # Bootstrap behavior: route all OTP notifications to one controlled inbox.
+        # This keeps early rollout simple while you verify first-login flow.
+        _log.warning(
+            "OTP placeholder delivery | requested=%s routed_to=%s code=%s",
+            requested_email,
+            routed_email,
+            code,
+        )
+
+        # Production delivery placeholder:
+        # Replace this block with your real provider implementation (SES/SendGrid/etc.)
+        # and send to requested_email instead of routed_email once rollout is complete.
+        #
+        # Example shape:
+        # email_client.send(
+        #     to=requested_email,
+        #     subject="Your login verification code",
+        #     body=f"Your OTP is {code}. It expires in {_OTP_TTL_MINUTES} minutes.",
+        # )
 
 
 _provider = OtpProvider()

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { layout, prepare } from '@chenglou/pretext'
 
 import {
   addCartItem,
@@ -16,6 +17,9 @@ import {
 import { clearAuth, getUser } from '../auth'
 import { DEFAULT_PROFILE_IMAGE_URL, resolveProfileImageUrl } from '../profileImage'
 import AppHeader from '../components/AppHeader'
+
+const PROJECT_CARD_DESC_FONT = "400 14px 'Plus Jakarta Sans'"
+const PROJECT_CARD_DESC_LINE_HEIGHT = 22.75
 
 function Stars({ rating, onRate, disabled = false }) {
   return (
@@ -165,7 +169,32 @@ function GooglePagination({ page, hasNext, loading, onPageChange, align = 'end' 
   )
 }
 
+function formatPublishedRelative(isoText) {
+  if (!isoText) return 'Published recently'
+  const published = new Date(isoText)
+  if (Number.isNaN(published.getTime())) return 'Published recently'
+
+  const diffMs = Date.now() - published.getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  if (diffMs < minute) return 'Published just now'
+  if (diffMs < hour) {
+    const mins = Math.floor(diffMs / minute)
+    return `Published ${mins} minute${mins === 1 ? '' : 's'} ago`
+  }
+  if (diffMs < day) {
+    const hours = Math.floor(diffMs / hour)
+    return `Published ${hours} hour${hours === 1 ? '' : 's'} ago`
+  }
+  const days = Math.floor(diffMs / day)
+  return `Published ${days} day${days === 1 ? '' : 's'} ago`
+}
+
 function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, isGuest = false, rankingsLocked = false }) {
+  const descriptionRef = useRef(null)
+  const [descriptionHeight, setDescriptionHeight] = useState(() => Math.ceil(PROJECT_CARD_DESC_LINE_HEIGHT))
   const isArchived = project.projectStatus === 'archived'
   const canAddToCart = !isGuest && !isArchived && !rankingsLocked && (inCart || rating > 0)
   const headerMeta = project.cohort || (project.tags.length ? `${project.tags.length} tagged skills` : 'Open project')
@@ -174,6 +203,51 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
     project.cohort ? `Cohort: ${project.cohort}` : null,
     project.tags.length ? `Skills: ${project.tags.length}` : null,
   ].filter(Boolean)
+  const cartAnimClass =
+    project?.cartAnim === 'add'
+      ? 'cart-action-pop-add'
+      : project?.cartAnim === 'remove'
+        ? 'cart-action-pop-remove'
+        : ''
+
+  useEffect(() => {
+    const measureDescription = () => {
+      const el = descriptionRef.current
+      const text = (project.description || '').trim()
+      if (!el) return
+      if (!text) {
+        setDescriptionHeight(Math.ceil(PROJECT_CARD_DESC_LINE_HEIGHT))
+        return
+      }
+
+      const width = el.clientWidth
+      if (!width) return
+
+      try {
+        const prepared = prepare(text, PROJECT_CARD_DESC_FONT)
+        const metrics = layout(prepared, width, PROJECT_CARD_DESC_LINE_HEIGHT)
+        const visibleLines = Math.max(1, Math.min(3, Number(metrics?.lineCount || 1)))
+        setDescriptionHeight(Math.ceil(visibleLines * PROJECT_CARD_DESC_LINE_HEIGHT))
+      } catch {
+        setDescriptionHeight(Math.ceil(PROJECT_CARD_DESC_LINE_HEIGHT * 3))
+      }
+    }
+
+    measureDescription()
+
+    const el = descriptionRef.current
+    if (!el) return undefined
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => measureDescription())
+      observer.observe(el)
+      return () => observer.disconnect()
+    }
+
+    const onResize = () => measureDescription()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [project.description])
 
   return (
     <div
@@ -205,9 +279,15 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
             </div>
           ) : null}
           <h3 className="project-card-title group-hover:text-duke-800 transition-colors">{project.title}</h3>
-          <p className="project-card-description mt-2">{project.description}</p>
-          <div className="mt-2 text-xs text-slate-500">
-            Published: {project.publishedDateLabel}
+          <p
+            ref={descriptionRef}
+            className="project-card-description mt-2"
+            style={{ minHeight: `${descriptionHeight}px` }}
+          >
+            {project.description}
+          </p>
+          <div className="mt-2 text-xs text-slate-500" title={project.publishedDateExact || ''}>
+            {project.publishedDateLabel}
           </div>
         </div>
 
@@ -279,9 +359,9 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
                 : rankingsLocked
                   ? 'btn-secondary opacity-60 cursor-not-allowed flex items-center gap-1.5'
                 : inCart
-                ? 'btn-secondary flex items-center gap-1.5 !text-pink-700 !border-pink-200 !bg-pink-50 hover:!bg-pink-100'
+                ? `btn-secondary flex items-center gap-1.5 !text-pink-700 !border-pink-200 !bg-pink-50 hover:!bg-pink-100 ${cartAnimClass}`
                 : canAddToCart
-                  ? 'btn-primary flex items-center gap-1.5'
+                  ? `btn-primary flex items-center gap-1.5 ${cartAnimClass}`
                   : 'btn-secondary opacity-60 cursor-not-allowed flex items-center gap-1.5'
             }
             onClick={(event) => {
@@ -356,8 +436,23 @@ export default function CatalogPage() {
   const [rankingsLocked, setRankingsLocked] = useState(false)
   const [ratings, setRatings] = useState({})
   const [actionMessage, setActionMessage] = useState('')
+  const [cartAnimByProject, setCartAnimByProject] = useState({})
   const [page, setPage] = useState(0)
   const [hasNext, setHasNext] = useState(false)
+
+  function getDefaultCohortValue(cohorts = []) {
+    const targetYear = String(new Date().getFullYear() + 1)
+    const normalized = (cohorts || [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+
+    // Prefer exact year match (e.g., "2027") before looser label matches (e.g., "MIDS 2027").
+    const exact = normalized.find((value) => value === targetYear)
+    if (exact) return exact
+
+    const includesYear = normalized.find((value) => value.includes(targetYear))
+    return includesYear || ''
+  }
 
   function mapProjects(list) {
     return list.map((x) => ({
@@ -372,7 +467,8 @@ export default function CatalogPage() {
       organization: x.organization ?? '—',
       projectStatus: String(x.project_status || 'published').toLowerCase(),
       createdAt: x.created_at || null,
-      publishedDateLabel: x.created_at ? new Date(x.created_at).toLocaleDateString() : 'Unknown',
+      publishedDateExact: x.published_at ? new Date(x.published_at).toLocaleString() : '',
+      publishedDateLabel: formatPublishedRelative(x.published_at || x.created_at),
     }))
   }
 
@@ -402,15 +498,23 @@ export default function CatalogPage() {
     async function load() {
       setLoading(true)
       try {
-        const [s, p, f] = await Promise.all([
+        const [s, f] = await Promise.all([
           getStats(),
-          searchProjects({ limit: FETCH_LIMIT, offset: 0 }),
           getFilters(),
         ])
         if (cancelled) return
 
+        const defaultCohort = getDefaultCohortValue(f?.cohorts || [])
+        const p = await searchProjects({
+          cohort: defaultCohort || undefined,
+          limit: FETCH_LIMIT,
+          offset: 0,
+        })
+        if (cancelled) return
+
         setStats(s)
         setFilters(f)
+        setSelectedCohort(defaultCohort)
 
         setPage(0)
         setPagedProjects(p)
@@ -487,6 +591,12 @@ export default function CatalogPage() {
     return () => clearTimeout(handle)
   }, [searchText, projectSort])
 
+  useEffect(() => {
+    if (!actionMessage) return undefined
+    const timer = window.setTimeout(() => setActionMessage(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [actionMessage])
+
   const curatedCount = useMemo(() => projects.length, [projects])
 
   async function handleToggleCart(projectId, inCart) {
@@ -507,10 +617,23 @@ export default function CatalogPage() {
       setActionMessage('Please rate a project before adding it to Selected Projects.')
       return
     }
+    if (!inCart && Number(cart?.selected || 0) >= Number(cart?.limit || 10)) {
+      setActionMessage('Not allowed: You can select up to 10 projects.')
+      return
+    }
     try {
+      const animType = inCart ? 'remove' : 'add'
       const updated = inCart ? await removeCartItem(projectId) : await addCartItem({ projectId })
       setCart(updated)
       setActionMessage('')
+      setCartAnimByProject((prev) => ({ ...prev, [String(projectId)]: animType }))
+      window.setTimeout(() => {
+        setCartAnimByProject((prev) => {
+          const next = { ...prev }
+          delete next[String(projectId)]
+          return next
+        })
+      }, 420)
     } catch (err) {
       setActionMessage(String(err?.message || 'Unable to update selected projects.'))
     }
@@ -540,8 +663,16 @@ export default function CatalogPage() {
       setActionMessage('Archived projects cannot be rated.')
       return
     }
-    setRatings((prev) => ({ ...prev, [String(projectId)]: Number(value || 0) }))
-    await saveRating({ projectId, rating: value })
+    const key = String(projectId)
+    const previous = Number(ratings[key] || 0)
+    setRatings((prev) => ({ ...prev, [key]: Number(value || 0) }))
+    try {
+      await saveRating({ projectId, rating: value })
+      setActionMessage('')
+    } catch (err) {
+      setRatings((prev) => ({ ...prev, [key]: previous }))
+      setActionMessage(String(err?.message || 'Unable to save rating.'))
+    }
   }
 
   return (
@@ -675,7 +806,6 @@ export default function CatalogPage() {
                     {filters.skills.length > 0 && (
                       <div>
                         <div className="label">Required Skills</div>
-                        <input className="input-base" placeholder="Search skills" />
                         <div className="flex flex-wrap gap-2 mt-2">
                           {filters.skills.slice(0, 6).map((skill) => (
                             <span
@@ -849,7 +979,7 @@ export default function CatalogPage() {
                     }}
                   />
                   <div>
-                    <div className="text-sm text-slate-500">Welcome {user?.display_name || user?.email || '<PRIVATE_PERSON>'}</div>
+                    <div className="text-sm text-slate-500">Welcome {user?.display_name || user?.email || 'Guest'}</div>
                     <div className="text-xl font-heading text-duke-900">Available capstone projects</div>
                     <div className="text-sm text-slate-500 mt-1">
                       Showing <span className="font-semibold">{curatedCount}</span> projects currently available.
@@ -869,9 +999,6 @@ export default function CatalogPage() {
                   </div>
                 </div>
               </div>
-              {actionMessage ? (
-                <div className="mt-3 text-sm text-red-700">{actionMessage}</div>
-              ) : null}
             </div>
 
             <div className="flex items-center justify-between w-full">
@@ -912,7 +1039,7 @@ export default function CatalogPage() {
                   {projects.map((p) => (
                     <ProjectCard
                       key={p.id}
-                      project={p}
+                      project={{ ...p, cartAnim: cartAnimByProject[String(p.id)] || null }}
                       inCart={cart.project_ids?.includes(p.id)}
                       onToggleCart={handleToggleCart}
                       rating={getRatingValue(p.id)}
@@ -940,6 +1067,11 @@ export default function CatalogPage() {
           </div>
         </div>
       </div>
+      {actionMessage ? (
+        <div className="app-toast fixed bottom-4 right-4 z-[70] max-w-md rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 shadow-lg">
+          {actionMessage}
+        </div>
+      ) : null}
     </div>
   )
 }

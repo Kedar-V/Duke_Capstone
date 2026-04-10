@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
-import { getRankings, getRatings, saveRankings } from '../api'
+import { getRankings, getRatings, removeCartItem, saveRankings } from '../api'
 import { subscribe } from '../events'
 import { getUser } from '../auth'
 
@@ -131,6 +131,22 @@ export default function CartDrawer() {
     const nextTop = [...topTen, item]
     const nextAdd = additional.filter((row) => row.id !== itemId)
     await persist(nextTop, nextAdd)
+  }
+
+  async function removeFromAdditional(itemId) {
+    if (rankingsLocked || saving) return
+    const item = additional.find((row) => row.id === itemId)
+    if (!item) return
+    setSaving(true)
+    setError('')
+    try {
+      await removeCartItem(item.id)
+      await loadData()
+    } catch (err) {
+      setError(String(err?.message || 'Failed to remove selected project'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   function openProject(item) {
@@ -317,15 +333,26 @@ export default function CartDrawer() {
                                   <RatingPreview value={getRatingValue(item.id)} />
                                 </div>
                                 {!rankingsLocked ? (
-                                  <button
-                                    type="button"
-                                    className="btn-secondary w-full sm:w-auto mt-2 sm:mt-0 justify-center"
-                                    onClick={(event) => { event.stopPropagation(); addToTop(item.id) }}
-                                    disabled={saving || getRatingValue(item.id) <= 0}
-                                    title={getRatingValue(item.id) <= 0 ? 'Rate this project first' : 'Add to Top 10'}
-                                  >
-                                    Add
-                                  </button>
+                                  <div className="w-full sm:w-auto mt-2 sm:mt-0 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className="btn-secondary flex-1 sm:flex-none justify-center"
+                                      onClick={(event) => { event.stopPropagation(); addToTop(item.id) }}
+                                      disabled={saving || getRatingValue(item.id) <= 0}
+                                      title={getRatingValue(item.id) <= 0 ? 'Rate this project first' : 'Add to Top 10'}
+                                    >
+                                      Add
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-secondary flex-1 sm:flex-none justify-center text-red-700 sm:text-slate-700"
+                                      onClick={(event) => { event.stopPropagation(); removeFromAdditional(item.id) }}
+                                      disabled={saving}
+                                      title="Remove from selected projects"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
                                 ) : null}
                               </div>
                             )}

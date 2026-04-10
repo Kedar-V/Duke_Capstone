@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .db import get_db
@@ -14,16 +14,6 @@ from .models import User
 
 _pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 _bearer = HTTPBearer(auto_error=False)
-_user_profile_image_schema_ready = False
-
-
-def _ensure_user_profile_image_schema(db: Session) -> None:
-    global _user_profile_image_schema_ready
-    if _user_profile_image_schema_ready:
-        return
-    db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url TEXT"))
-    db.commit()
-    _user_profile_image_schema_ready = True
 
 
 def hash_password(password: str) -> str:
@@ -52,7 +42,6 @@ def create_access_token(*, user: User, expires_in_minutes: int = 60 * 24 * 7) ->
 def _user_from_credentials(
     *, db: Session, credentials: Optional[HTTPAuthorizationCredentials]
 ) -> Optional[User]:
-    _ensure_user_profile_image_schema(db)
     if not credentials or not credentials.credentials:
         return None
 

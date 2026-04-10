@@ -14,46 +14,14 @@ from ..schemas import (
     FirstLoginOtpVerifyIn,
     LoginIn,
     MessageOut,
-    RegisterIn,
     UserProfileUpdateIn,
     UserOut,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-_user_profile_image_schema_ready = False
-_student_profile_schema_ready = False
 _MIDS_IMAGE_BASE = "https://datascience.duke.edu/wp-content/uploads/2025/09"
 _MIDS_IMAGE_FALLBACK = "https://yt3.googleusercontent.com/ihHsUHbGBK5djSjn2aBG5DHe84yWL6ZiCOypLn-KGElQWiul7pkCVMp7AstRHiYWVxwaBLzKwg=s900-c-k-c0x00ffffff-no-rj"
-
-
-def _ensure_user_profile_image_schema(db: Session) -> None:
-    global _user_profile_image_schema_ready
-    if _user_profile_image_schema_ready:
-        return
-
-    db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url TEXT"))
-    db.commit()
-    _user_profile_image_schema_ready = True
-
-
-def _ensure_student_profile_schema(db: Session) -> None:
-    global _student_profile_schema_ready
-    if _student_profile_schema_ready:
-        return
-
-    db.execute(text("ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id BIGINT"))
-    db.execute(
-        text(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_students_user_id
-            ON students(user_id)
-            WHERE user_id IS NOT NULL
-            """
-        )
-    )
-    db.commit()
-    _student_profile_schema_ready = True
 
 
 def _safe_name_token(value: str) -> str:
@@ -108,7 +76,6 @@ def _user_out(user: User) -> UserOut:
 
 
 def _ensure_student_profile_for_user(db: Session, user: User) -> None:
-    _ensure_student_profile_schema(db)
     if (user.role or "student") != "student":
         return
 
@@ -142,32 +109,8 @@ def _ensure_student_profile_for_user(db: Session, user: User) -> None:
         )
 
 
-@router.post("/register", response_model=AuthOut)
-def register(payload: RegisterIn, db: Session = Depends(get_db)):
-    _ensure_user_profile_image_schema(db)
-    existing = db.execute(select(User).where(User.email == payload.email)).scalars().first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email is already registered")
-
-    user = User(
-        email=payload.email,
-        display_name=payload.display_name,
-        password_hash=hash_password(payload.password),
-        role="student",
-    )
-    db.add(user)
-    db.flush()
-    _ensure_student_profile_for_user(db, user)
-    db.commit()
-    db.refresh(user)
-
-    token = create_access_token(user=user)
-    return AuthOut(access_token=token, user=_user_out(user))
-
-
 @router.post("/login", response_model=AuthOut)
 def login(payload: LoginIn, db: Session = Depends(get_db)):
-    _ensure_user_profile_image_schema(db)
     user = db.execute(select(User).where(User.email == payload.email)).scalars().first()
     if not user or user.deleted_at is not None:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -196,7 +139,6 @@ def update_me(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _ensure_user_profile_image_schema(db)
     has_name = payload.display_name is not None
     has_password = payload.password is not None and payload.password != ""
     has_profile_image_url = payload.profile_image_url is not None
@@ -228,7 +170,6 @@ def update_me(
 
 @router.post("/first-login/request-otp", response_model=MessageOut)
 def first_login_request_otp(payload: FirstLoginOtpRequestIn, db: Session = Depends(get_db)):
-    _ensure_user_profile_image_schema(db)
     email = (payload.email or "").strip().lower()
     user = db.execute(select(User).where(User.email == email)).scalars().first()
     if not user or user.deleted_at is not None:
@@ -243,7 +184,6 @@ def first_login_request_otp(payload: FirstLoginOtpRequestIn, db: Session = Depen
 
 @router.post("/first-login/verify-otp", response_model=AuthOut)
 def first_login_verify_otp(payload: FirstLoginOtpVerifyIn, db: Session = Depends(get_db)):
-    _ensure_user_profile_image_schema(db)
     email = (payload.email or "").strip().lower()
     user = db.execute(select(User).where(User.email == email)).scalars().first()
     if not user or user.deleted_at is not None:

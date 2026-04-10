@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { layout, prepare } from '@chenglou/pretext'
 
 import {
   addCartItem,
@@ -14,6 +15,10 @@ import {
 } from '../api'
 import { getUser } from '../auth'
 import AppHeader from '../components/AppHeader'
+
+const DETAIL_TEXT_FONT = "400 16px 'Plus Jakarta Sans'"
+const DETAIL_TEXT_LINE_HEIGHT = 26
+const DETAIL_COLLAPSED_LINES = 6
 
 function Stars({ rating, onRate, disabled = false }) {
   return (
@@ -51,10 +56,81 @@ function Section({ title, children }) {
 }
 
 function Lines({ text }) {
-  if (!text) return <div className="muted">—</div>
+  const value = String(text || '').trim()
+  const [expanded, setExpanded] = useState(false)
+  const [canExpand, setCanExpand] = useState(false)
+  const [collapsedHeightPx, setCollapsedHeightPx] = useState(DETAIL_COLLAPSED_LINES * DETAIL_TEXT_LINE_HEIGHT)
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    setExpanded(false)
+  }, [value])
+
+  useEffect(() => {
+    const containerEl = containerRef.current
+    if (!containerEl) return undefined
+
+    const measure = () => {
+      const width = containerEl.clientWidth
+      if (!width || !value) {
+        setCanExpand(false)
+        return
+      }
+
+      try {
+        const prepared = prepare(value, DETAIL_TEXT_FONT, { whiteSpace: 'pre-wrap' })
+        const metrics = layout(prepared, width, DETAIL_TEXT_LINE_HEIGHT)
+        const lineCount = Number(metrics?.lineCount || 1)
+        setCanExpand(lineCount > DETAIL_COLLAPSED_LINES)
+        setCollapsedHeightPx(DETAIL_COLLAPSED_LINES * DETAIL_TEXT_LINE_HEIGHT)
+      } catch {
+        setCanExpand(value.length > 600)
+        setCollapsedHeightPx(DETAIL_COLLAPSED_LINES * DETAIL_TEXT_LINE_HEIGHT)
+      }
+    }
+
+    measure()
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => measure())
+      observer.observe(containerEl)
+      return () => observer.disconnect()
+    }
+
+    const onResize = () => measure()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [value])
+
+  if (!value) return <div className="muted">—</div>
+
   return (
-    <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-justify leading-relaxed">
-      {text}
+    <div>
+      <div className="relative">
+        <div
+          ref={containerRef}
+          className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-justify leading-relaxed"
+          style={
+            !expanded && canExpand
+              ? { maxHeight: `${collapsedHeightPx}px`, overflow: 'hidden' }
+              : undefined
+          }
+        >
+          {text}
+        </div>
+        {!expanded && canExpand ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white via-white/90 to-transparent" />
+        ) : null}
+      </div>
+      {canExpand ? (
+        <button
+          type="button"
+          className="mt-2 text-sm font-semibold text-duke-800 hover:text-duke-900"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -99,7 +175,9 @@ export default function ProjectDisplayPage() {
   const [myComments, setMyComments] = useState([])
   const [commentDrawerOpen, setCommentDrawerOpen] = useState(false)
   const [error, setError] = useState('')
+  const [toastMessage, setToastMessage] = useState('')
   const [commentMessage, setCommentMessage] = useState('')
+  const [cartAnim, setCartAnim] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -152,6 +230,12 @@ export default function ProjectDisplayPage() {
   }, [cart, project?.id])
   const isArchived = String(project?.project_status || '').toLowerCase() === 'archived'
 
+  useEffect(() => {
+    if (!toastMessage) return undefined
+    const timer = window.setTimeout(() => setToastMessage(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [toastMessage])
+
   async function handleToggleCart() {
     if (!project?.id) return
     if (!user) {
@@ -159,22 +243,33 @@ export default function ProjectDisplayPage() {
       return
     }
     if (rankingsLocked) {
-      setError('Ranking window is closed. Project selection is disabled.')
+      setToastMessage('Ranking window is closed. Project selection is disabled.')
       return
     }
     if (isArchived) {
-      setError('Archived projects are visible but cannot be selected for ranking.')
+      setToastMessage('Archived projects are visible but cannot be selected for ranking.')
       return
     }
     if (!inCart && rating <= 0) {
-      setError('Please rate this project before adding it to selected projects.')
+      setToastMessage('Please rate this project before adding it to selected projects.')
       return
     }
-    const updated = inCart
-      ? await removeCartItem(project.id)
-      : await addCartItem({ projectId: project.id })
-    setCart(updated)
-    setError('')
+    if (!inCart && Number(cart?.selected || 0) >= Number(cart?.limit || 10)) {
+      setToastMessage('Not allowed: You can select up to 10 projects.')
+      return
+    }
+    try {
+      const animType = inCart ? 'remove' : 'add'
+      const updated = inCart
+        ? await removeCartItem(project.id)
+        : await addCartItem({ projectId: project.id })
+      setCart(updated)
+      setToastMessage('')
+      setCartAnim(animType)
+      window.setTimeout(() => setCartAnim(''), 420)
+    } catch (err) {
+      setToastMessage(String(err?.message || 'Unable to update selected projects.'))
+    }
   }
 
   async function handleRate(value) {
@@ -183,16 +278,23 @@ export default function ProjectDisplayPage() {
       return
     }
     if (rankingsLocked) {
-      setError('Ranking window is closed. Rating changes are disabled.')
+      setToastMessage('Ranking window is closed. Rating changes are disabled.')
       return
     }
     if (isArchived) {
-      setError('Archived projects cannot be rated.')
+      setToastMessage('Archived projects cannot be rated.')
       return
     }
-    setRating(value)
     if (!project?.id) return
-    await saveRating({ projectId: project.id, rating: value })
+    const previous = Number(rating || 0)
+    setRating(value)
+    try {
+      await saveRating({ projectId: project.id, rating: value })
+      setToastMessage('')
+    } catch (err) {
+      setRating(previous)
+      setToastMessage(String(err?.message || 'Unable to save rating.'))
+    }
   }
 
   async function handleSubmitComment() {
@@ -231,7 +333,7 @@ export default function ProjectDisplayPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto px-4 py-10 space-y-6 md:space-y-8">
+      <div className="max-w-6xl mx-auto px-4 py-10 space-y-6 md:space-y-8">
         <AppHeader />
 
         {user?.role === 'student' && commentDrawerOpen ? (
@@ -382,7 +484,7 @@ export default function ProjectDisplayPage() {
                   ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:p-5 space-y-4 xl:sticky xl:top-6">
+                <div className="match-rating-panel rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:p-5 space-y-4 xl:sticky xl:top-6">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Your Match Rating</div>
                   <div className="flex items-center justify-between gap-3">
                     <Stars rating={rating} onRate={handleRate} disabled={!user || rankingsLocked || isArchived} />
@@ -410,9 +512,9 @@ export default function ProjectDisplayPage() {
                         : rankingsLocked
                           ? 'btn-secondary h-[52px] w-full px-5 opacity-60 cursor-not-allowed flex items-center justify-center gap-2'
                         : inCart
-                        ? 'btn-secondary h-[52px] w-full px-5 flex items-center justify-center gap-2 !text-pink-700 !border-pink-200 !bg-pink-50 hover:!bg-pink-100 transition-colors shadow-sm'
+                        ? `btn-secondary h-[52px] w-full px-5 flex items-center justify-center gap-2 !text-pink-700 !border-pink-200 !bg-pink-50 hover:!bg-pink-100 transition-colors shadow-sm ${cartAnim === 'remove' ? 'cart-action-pop-remove' : ''}`
                         : rating > 0
-                          ? 'btn-primary h-[52px] w-full px-5 flex items-center justify-center gap-2 shadow-sm'
+                          ? `btn-primary h-[52px] w-full px-5 flex items-center justify-center gap-2 shadow-sm ${cartAnim === 'add' ? 'cart-action-pop-add' : ''}`
                           : 'btn-secondary h-[52px] w-full px-5 opacity-60 cursor-not-allowed flex items-center justify-center gap-2'
                     }
                     onClick={handleToggleCart}
@@ -580,6 +682,11 @@ export default function ProjectDisplayPage() {
           </>
         )}
       </div>
+      {toastMessage ? (
+        <div className="app-toast fixed bottom-4 right-4 z-[70] max-w-md rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 shadow-lg">
+          {toastMessage}
+        </div>
+      ) : null}
     </div>
   )
 }

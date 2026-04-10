@@ -1,0 +1,259 @@
+erDiagram
+  admin_audit_log {
+    int8 id PK
+    int8 admin_user_id FK
+    text action
+    text target_type
+    text target_id
+    jsonb details
+    timestamptz created_at
+  }
+  alembic_version {
+    varchar version_num PK
+  }
+  assignment_preview_runs {
+    int8 id PK
+    int8 rule_config_id FK
+    int8 cohort_id FK
+    int8 initiated_by_user_id FK
+    text input_fingerprint
+    jsonb preview_json
+    jsonb quality_json
+    jsonb integrity_json
+    jsonb warnings_json
+    timestamptz created_at
+  }
+  assignment_rule_configs {
+    int8 id PK
+    text name
+    int8 cohort_id FK
+    bool is_active
+    int4 team_size
+    bool enforce_same_cohort
+    bool hard_avoid
+    int4 max_low_preference_per_team
+    int4 weight_project_preference
+    int4 weight_mutual_want
+    int4 weight_fairness
+    int4 weight_skill_balance
+    int4 penalty_avoid
+    text notes
+    jsonb extra_rules
+    int8 created_by_user_id FK
+    int8 updated_by_user_id FK
+    timestamptz created_at
+    timestamptz updated_at
+    int4 weight_project_rating
+  }
+  assignment_saved_runs {
+    int8 id PK
+    int8 rule_config_id FK
+    int8 cohort_id FK
+    int8 source_preview_run_id FK
+    int8 saved_by_user_id FK
+    text input_fingerprint
+    text notes
+    jsonb preview_json
+    timestamptz created_at
+  }
+  cart_items {
+    int8 cart_id PK, FK
+    timestamptz added_at
+    int8 project_id PK, FK
+  }
+  carts {
+    int8 id PK
+    int8 user_id FK
+    text status
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  client_intake_forms {
+    jsonb raw
+    text contact_name
+    text contact_email
+    text project_title
+    text project_summary
+    text project_description
+    text minimum_deliverables
+    text stretch_goals
+    text long_term_impact
+    text scope_clarity
+    text scope_clarity_other
+    text publication_potential
+    jsonb required_skills
+    text required_skills_other
+    jsonb technical_domains
+    text data_access
+    jsonb supplementary_documents
+    jsonb video_links
+    text edit_token
+    text edit_url
+    jsonb revisions
+    timestamptz created_at
+    timestamptz updated_at
+    int8 cohort_id
+    int8 project_id
+    timestamptz deleted_at
+    text slug
+  }
+  cohorts {
+    int8 id PK
+    text name
+    text program
+    int4 year
+    timestamptz created_at
+    timestamptz rankings_editable_until
+  }
+  companies {
+    int8 id PK
+    text name
+    text industry
+    text website
+    timestamptz created_at
+    text logo_url
+    text sector
+  }
+  faculty_profiles {
+    int8 user_id PK, FK
+    text department
+    text title
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  project_comments {
+    int8 id PK
+    int8 project_id FK
+    int8 user_id FK
+    text comment
+    bool is_resolved
+    timestamptz resolved_at
+    int8 resolved_by_user_id FK
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  project_companies {
+    int8 project_id PK, FK
+    int8 company_id FK
+    timestamptz created_at
+  }
+  projects {
+    jsonb raw
+    text contact_name
+    text contact_email
+    text project_title
+    text project_summary
+    text project_description
+    text minimum_deliverables
+    text stretch_goals
+    text long_term_impact
+    text scope_clarity
+    text scope_clarity_other
+    text publication_potential
+    jsonb required_skills
+    text required_skills_other
+    jsonb technical_domains
+    text data_access
+    jsonb supplementary_documents
+    jsonb video_links
+    text edit_token
+    text edit_url
+    jsonb revisions
+    timestamptz created_at
+    timestamptz updated_at
+    int8 cohort_id FK
+    int8 project_id PK
+    timestamptz deleted_at
+    text slug
+    text project_status
+    timestamptz published_at
+    timestamptz archived_at
+  }
+  ranking_items {
+    int8 ranking_id PK, FK
+    int4 rank
+    timestamptz added_at
+    int8 project_id PK, FK
+  }
+  rankings {
+    int8 id PK
+    int8 user_id FK
+    timestamptz created_at
+    timestamptz updated_at
+    bool is_submitted
+    timestamptz submitted_at
+  }
+  ratings {
+    int8 id PK
+    int8 user_id FK
+    int4 rating
+    timestamptz created_at
+    timestamptz updated_at
+    int8 project_id FK
+  }
+  students {
+    int8 id PK
+    text full_name
+    text email
+    text program
+    timestamptz created_at
+    int8 cohort_id FK
+    int8 user_id FK
+  }
+  teammate_preferences {
+    int8 id PK
+    int8 user_id FK
+    text student_id_hash
+    text payload_ciphertext
+    int8 student_id FK
+    text preference
+    timestamptz created_at
+  }
+  user_profiles {
+    int8 user_id PK, FK
+    int4 avg_match_score
+    timestamptz updated_at
+  }
+  users {
+    int8 id PK
+    text email
+    text display_name
+    text password_hash
+    timestamptz created_at
+    text role
+    int8 cohort_id FK
+    timestamptz deleted_at
+    text profile_image_url
+  }
+  assignment_preview_runs ||--o{ assignment_saved_runs : source_preview_run_id
+  assignment_rule_configs ||--o{ assignment_preview_runs : rule_config_id
+  assignment_rule_configs ||--o{ assignment_saved_runs : rule_config_id
+  carts ||--o{ cart_items : cart_id
+  cohorts ||--o{ assignment_preview_runs : cohort_id
+  cohorts ||--o{ assignment_rule_configs : cohort_id
+  cohorts ||--o{ assignment_saved_runs : cohort_id
+  cohorts ||--o{ projects : cohort_id
+  cohorts ||--o{ students : cohort_id
+  cohorts ||--o{ users : cohort_id
+  companies ||--o{ project_companies : company_id
+  projects ||--o{ cart_items : project_id
+  projects ||--o{ project_comments : project_id
+  projects ||--o{ project_companies : project_id
+  projects ||--o{ ranking_items : project_id
+  projects ||--o{ ratings : project_id
+  rankings ||--o{ ranking_items : ranking_id
+  students ||--o{ teammate_preferences : student_id
+  users ||--o{ admin_audit_log : admin_user_id
+  users ||--o{ assignment_preview_runs : initiated_by_user_id
+  users ||--o{ assignment_rule_configs : created_by_user_id
+  users ||--o{ assignment_rule_configs : updated_by_user_id
+  users ||--o{ assignment_saved_runs : saved_by_user_id
+  users ||--o{ carts : user_id
+  users ||--o{ faculty_profiles : user_id
+  users ||--o{ project_comments : resolved_by_user_id
+  users ||--o{ project_comments : user_id
+  users ||--o{ rankings : user_id
+  users ||--o{ ratings : user_id
+  users ||--o{ students : user_id
+  users ||--o{ teammate_preferences : user_id
+  users ||--o{ user_profiles : user_id

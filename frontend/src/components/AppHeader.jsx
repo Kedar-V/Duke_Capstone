@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getUser, clearAuth } from '../auth'
 import CartNavIcon from './CartNavIcon'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 import { DEFAULT_PROFILE_IMAGE_URL, initialsForPerson, resolveProfileImageUrl } from '../profileImage'
+import { getCurrentTheme, toggleTheme } from '../theme'
 
 export default function AppHeader({ onSearch, searchText, setSearchText, showSearch = false }) {
   const navigate = useNavigate()
@@ -13,6 +14,11 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
   const [menuOpen, setMenuOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountAvatarFailed, setAccountAvatarFailed] = useState(false)
+  const [theme, setTheme] = useState('light')
+
+  useEffect(() => {
+    setTheme(getCurrentTheme())
+  }, [])
 
   const menuItems = user?.role === 'admin'
     ? ['Projects', 'Partners', 'Admin']
@@ -39,8 +45,35 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
     navigate('/profile')
   }
 
-  const AvatarControls = () => (
+  const AvatarControls = ({ showThemeToggle = true } = {}) => (
     <>
+      {showThemeToggle ? (
+        <button
+          type="button"
+          className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-colors"
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          onClick={() => setTheme(toggleTheme())}
+        >
+          {theme === 'dark' ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2"/>
+              <path d="M12 20v2"/>
+              <path d="m4.93 4.93 1.41 1.41"/>
+              <path d="m17.66 17.66 1.41 1.41"/>
+              <path d="M2 12h2"/>
+              <path d="M20 12h2"/>
+              <path d="m6.34 17.66-1.41 1.41"/>
+              <path d="m19.07 4.93-1.41 1.41"/>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/>
+            </svg>
+          )}
+        </button>
+      ) : null}
       {user ? <CartNavIcon /> : null}
       <div className="relative">
         <button
@@ -129,13 +162,42 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
                         {label}
                       </button>
                     ))}
+                    <div className="my-1 border-t border-slate-200" />
+                    <div className="px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100 flex items-center justify-between">
+                      <span className="font-medium">Theme</span>
+                      <button
+                        type="button"
+                        className="h-8 min-w-[2rem] px-2 rounded-full border border-slate-200 bg-white text-slate-700 text-xs font-semibold flex items-center justify-center gap-1"
+                        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                        onClick={() => setTheme(toggleTheme())}
+                      >
+                        {theme === 'dark' ? (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <circle cx="12" cy="12" r="4"/>
+                              <path d="M12 2v2"/>
+                              <path d="M12 20v2"/>
+                            </svg>
+                            <span>Light</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/>
+                            </svg>
+                            <span>Dark</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : null}
             </div>
             <button
               type="button"
-              className="inline-flex hover:opacity-80 transition-opacity"
+              className="inline-flex mids-logo-surface hover:opacity-80 transition-opacity"
               aria-label="Go to projects"
               onClick={() => navigate('/projects')}
             >
@@ -167,7 +229,7 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
             </div>
           </div>
           <div className="flex items-center gap-3 md:hidden">
-            <AvatarControls />
+            <AvatarControls showThemeToggle={false} />
           </div>
         </div>
 
@@ -185,15 +247,20 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
                   }
                 }}
               />
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔎</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.2-3.2" />
+                </svg>
+              </span>
             </div>
             <div className="hidden md:flex items-center gap-3">
-              <AvatarControls />
+              <AvatarControls showThemeToggle />
             </div>
           </div>
         ) : (
           <div className="hidden md:flex items-center gap-3">
-            <AvatarControls />
+            <AvatarControls showThemeToggle />
           </div>
         )}
       </div>

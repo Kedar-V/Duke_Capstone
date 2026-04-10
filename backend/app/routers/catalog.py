@@ -1115,16 +1115,23 @@ def add_to_cart(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.project_id == payload.project_id)
             .where(ClientIntakeForm.deleted_at.is_(None))
-            .where(_rankable_status_filter())
         )
         .scalars()
         .first()
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    if _normalize_project_status(project.project_status) != _PROJECT_STATUS_PUBLISHED:
+        raise HTTPException(
+            status_code=400,
+            detail="Only published projects can be selected for ranking",
+        )
     if current_user.role == "student" and current_user.cohort_id:
         if project.cohort_id != current_user.cohort_id:
-            raise HTTPException(status_code=404, detail="Project not found")
+            raise HTTPException(
+                status_code=403,
+                detail="This project is outside your cohort and cannot be ranked",
+            )
 
     has_rating = (
         db.execute(
@@ -1155,11 +1162,20 @@ def add_to_cart(
     if existing:
         return get_cart(db=db, current_user=current_user)
 
+    # Keep cart-limit accounting consistent with get_cart(): only count rankable,
+    # non-deleted projects so stale cart rows don't block valid additions.
     selected = db.execute(
-        select(func.count(CartItem.project_id)).where(CartItem.cart_id == cart.id)
+        select(func.count(CartItem.project_id))
+        .join(ClientIntakeForm, ClientIntakeForm.project_id == CartItem.project_id)
+        .where(CartItem.cart_id == cart.id)
+        .where(ClientIntakeForm.deleted_at.is_(None))
+        .where(_rankable_status_filter())
     ).scalar_one()
     if selected >= 10:
-        return get_cart(db=db, current_user=current_user)
+        raise HTTPException(
+            status_code=400,
+            detail="Not allowed: You can select up to 10 projects.",
+        )
 
     db.add(CartItem(cart_id=cart.id, project_id=payload.project_id))
     db.commit()
@@ -1409,16 +1425,23 @@ def save_rating(
             select(ClientIntakeForm)
             .where(ClientIntakeForm.project_id == payload.project_id)
             .where(ClientIntakeForm.deleted_at.is_(None))
-            .where(_rankable_status_filter())
         )
         .scalars()
         .first()
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    if _normalize_project_status(project.project_status) != _PROJECT_STATUS_PUBLISHED:
+        raise HTTPException(
+            status_code=400,
+            detail="Only published projects can be rated for ranking",
+        )
     if current_user.role == "student" and current_user.cohort_id:
         if project.cohort_id != current_user.cohort_id:
-            raise HTTPException(status_code=404, detail="Project not found")
+            raise HTTPException(
+                status_code=403,
+                detail="This project is outside your cohort and cannot be ranked",
+            )
 
     stmt = (
         insert(Rating)
@@ -1576,67 +1599,6 @@ def submit_rankings(
     ranking = _get_or_create_ranking(db, current_user.id)
     if ranking.is_submitted:
         return get_rankings(db=db, current_user=current_user)
-
-    ranking_items = (
-        db.execute(
-            select(RankingItem)
-            .where(RankingItem.ranking_id == ranking.id)
-            .order_by(RankingItem.rank.asc())
-        )
-        .scalars()
-        .all()
-    )
-    top_ids = [item.project_id for item in ranking_items]
-
-    cart = (
-        db.execute(
-            select(Cart)
-            .where(Cart.user_id == current_user.id, Cart.status == "open")
-            .order_by(Cart.id.desc())
-        )
-        .scalars()
-        .first()
-    )
-    cart_ids: list[int] = []
-    if cart:
-        cart_ids = (
-            db.execute(select(CartItem.project_id).where(CartItem.cart_id == cart.id))
-            .scalars()
-            .all()
-        )
-
-    effective_top_ids = [pid for pid in top_ids if pid in cart_ids]
-    valid_rankable_ids = set(
-        db.execute(
-            select(ClientIntakeForm.project_id).where(
-                ClientIntakeForm.deleted_at.is_(None),
-                _rankable_status_filter(),
-                ClientIntakeForm.project_id.in_(effective_top_ids),
-            )
-        )
-        .scalars()
-        .all()
-    )
-    effective_top_ids = [pid for pid in effective_top_ids if pid in valid_rankable_ids]
-    if len(effective_top_ids) != 10:
-        raise HTTPException(status_code=400, detail="You must rank exactly 10 projects before submitting")
-
-    rated_ids = set(
-        db.execute(
-            select(Rating.project_id).where(
-                Rating.user_id == current_user.id,
-                Rating.project_id.in_(effective_top_ids),
-            )
-        )
-        .scalars()
-        .all()
-    )
-    missing_rating_ids = [pid for pid in effective_top_ids if pid not in rated_ids]
-    if missing_rating_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="All ranked projects must be rated before submitting",
-        )
 
     ranking.is_submitted = True
     ranking.submitted_at = datetime.now(timezone.utc)

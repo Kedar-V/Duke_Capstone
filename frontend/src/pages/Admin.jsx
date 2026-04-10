@@ -5,6 +5,7 @@ import {
   adminActivateAssignmentRule,
   adminCreateAssignmentRule,
   adminGetActiveAssignmentRule,
+  adminGetSavedAssignmentRun,
   adminListAssignmentRules,
   adminListSavedAssignmentRuns,
   adminListPartnerPreferences,
@@ -25,7 +26,6 @@ import {
   adminListProjectComments,
   adminExportRankingSubmissionsCsv,
   adminListRankingSubmissions,
-  adminReopenRankingSubmission,
   adminUploadCohortStudentsCsv,
   adminDeleteUser,
   adminListCohorts,
@@ -81,7 +81,7 @@ function partitionTeamSizes(total, minSize, maxSize, targetSize) {
   return Array.from({ length: teamCount }, (_, idx) => (idx < remainder ? base + 1 : base))
 }
 
-function PartnerNetwork3D({ graph, onNodeSelect }) {
+function PartnerNetwork3D({ graph, onNodeSelect, canvasClassName = 'h-[460px] w-full rounded border border-slate-100 bg-slate-50' }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -105,7 +105,16 @@ function PartnerNetwork3D({ graph, onNodeSelect }) {
         z: r * Math.sin(phi) * Math.sin(theta),
         degree: node.degree || 0,
         label: node.label,
+        imageUrl: node.imageUrl || '',
       }
+    })
+
+    const nodeImages = points.map((point) => {
+      const src = String(point.imageUrl || '').trim()
+      if (!src) return null
+      const image = new Image()
+      image.src = src
+      return image
     })
 
     const edges = graph.edges
@@ -160,17 +169,18 @@ function PartnerNetwork3D({ graph, onNodeSelect }) {
 
       const cx = state.width / 2
       const cy = state.height / 2
-      const focal = 360 * state.zoom
+      const focal = 360
 
       const projected = points.map((p, idx) => {
         const r = rotatePoint(p)
         const depth = focal / (focal + r.z + 220)
+        const scaledDepth = depth * state.zoom
         return {
           idx,
-          x: cx + r.x * depth,
-          y: cy + r.y * depth,
+          x: cx + r.x * scaledDepth,
+          y: cy + r.y * scaledDepth,
           z: r.z,
-          depth,
+          depth: scaledDepth,
           degree: p.degree,
           label: p.label,
         }
@@ -197,13 +207,31 @@ function PartnerNetwork3D({ graph, onNodeSelect }) {
       projected.sort((a, b) => a.z - b.z)
       for (const node of projected) {
         const radius = Math.max(4, Math.min(11, 5 + node.degree * 0.5)) * node.depth
+        const isHover = state.hovered === node.idx
+
         ctx.beginPath()
         ctx.arc(node.x, node.y, radius, 0, Math.PI * 2)
-        const isHover = state.hovered === node.idx
-        ctx.fillStyle = isHover ? '#1d4ed8' : '#1e3a8a'
+        ctx.fillStyle = '#e2e8f0'
         ctx.fill()
+
+        const image = nodeImages[node.idx]
+        if (image && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+          ctx.save()
+          ctx.beginPath()
+          ctx.arc(node.x, node.y, radius - 0.8, 0, Math.PI * 2)
+          ctx.clip()
+          const size = (radius - 0.8) * 2
+          ctx.drawImage(image, node.x - size / 2, node.y - size / 2, size, size)
+          ctx.restore()
+        } else {
+          ctx.beginPath()
+          ctx.arc(node.x, node.y, radius - 0.8, 0, Math.PI * 2)
+          ctx.fillStyle = isHover ? '#1d4ed8' : '#1e3a8a'
+          ctx.fill()
+        }
+
         ctx.lineWidth = 1.2
-        ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+        ctx.strokeStyle = isHover ? 'rgba(30,58,138,0.95)' : 'rgba(255,255,255,0.95)'
         ctx.stroke()
       }
 
@@ -238,15 +266,16 @@ function PartnerNetwork3D({ graph, onNodeSelect }) {
 
       const cx = state.width / 2
       const cy = state.height / 2
-      const focal = 360 * state.zoom
+      const focal = 360
 
       let best = null
       for (let i = 0; i < points.length; i += 1) {
         const r = rotatePoint(points[i])
         const depth = focal / (focal + r.z + 220)
-        const px = cx + r.x * depth
-        const py = cy + r.y * depth
-        const radius = Math.max(4, Math.min(11, 5 + points[i].degree * 0.5)) * depth
+        const scaledDepth = depth * state.zoom
+        const px = cx + r.x * scaledDepth
+        const py = cy + r.y * scaledDepth
+        const radius = Math.max(4, Math.min(11, 5 + points[i].degree * 0.5)) * scaledDepth
         const dx = mx - px
         const dy = my - py
         const d2 = dx * dx + dy * dy
@@ -302,8 +331,8 @@ function PartnerNetwork3D({ graph, onNodeSelect }) {
 
     const onWheel = (e) => {
       e.preventDefault()
-      const delta = e.deltaY > 0 ? -0.08 : 0.08
-      state.zoom = Math.max(0.7, Math.min(1.65, state.zoom + delta))
+      const scale = e.deltaY > 0 ? 0.88 : 1.12
+      state.zoom = Math.max(0.35, Math.min(8, state.zoom * scale))
     }
 
     resize()
@@ -334,7 +363,7 @@ function PartnerNetwork3D({ graph, onNodeSelect }) {
 
   return (
     <div>
-      <canvas ref={canvasRef} className="h-[360px] w-full rounded border border-slate-100 bg-slate-50" />
+      <canvas ref={canvasRef} className={canvasClassName} />
       <div className="mt-2 text-[11px] text-slate-500">Drag to rotate. Scroll to zoom. Hover nodes for labels. Click a node for details.</div>
     </div>
   )
@@ -366,6 +395,7 @@ export default function AdminPage() {
   const [partnerIncludeComments, setPartnerIncludeComments] = useState(true)
   const [partnerFilterMode, setPartnerFilterMode] = useState('all')
   const [selectedGraphUserId, setSelectedGraphUserId] = useState(null)
+  const [partnerGraphExpanded, setPartnerGraphExpanded] = useState(false)
   const [partnerLoading, setPartnerLoading] = useState(false)
   const [rankingSubmissions, setRankingSubmissions] = useState([])
   const [rankingCohortId, setRankingCohortId] = useState('')
@@ -401,11 +431,21 @@ export default function AdminPage() {
   const [projectSlugTouched, setProjectSlugTouched] = useState(false)
   const [projectSummary, setProjectSummary] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
+  const [projectMinimumDeliverables, setProjectMinimumDeliverables] = useState('')
+  const [projectStretchGoals, setProjectStretchGoals] = useState('')
+  const [projectLongTermImpact, setProjectLongTermImpact] = useState('')
+  const [projectScopeClarity, setProjectScopeClarity] = useState('')
+  const [projectScopeClarityOther, setProjectScopeClarityOther] = useState('')
+  const [projectPublicationPotential, setProjectPublicationPotential] = useState('')
+  const [projectDataAccess, setProjectDataAccess] = useState('')
   const [projectCoverImageUrl, setProjectCoverImageUrl] = useState('')
   const [projectContactName, setProjectContactName] = useState('')
   const [projectContactEmail, setProjectContactEmail] = useState('')
   const [projectSkills, setProjectSkills] = useState('')
+  const [projectSkillsOther, setProjectSkillsOther] = useState('')
   const [projectDomains, setProjectDomains] = useState('')
+  const [projectSupplementaryDocuments, setProjectSupplementaryDocuments] = useState('')
+  const [projectVideoLinks, setProjectVideoLinks] = useState('')
   const [projectCohortId, setProjectCohortId] = useState('')
   const [projectCompanyId, setProjectCompanyId] = useState('')
   const [projectStatus, setProjectStatus] = useState('draft')
@@ -433,6 +473,8 @@ export default function AdminPage() {
   const [rulePenaltyAvoid, setRulePenaltyAvoid] = useState('100')
   const [ruleNotes, setRuleNotes] = useState('')
   const [ruleFormError, setRuleFormError] = useState('')
+  const [ruleFlowOpen, setRuleFlowOpen] = useState(false)
+  const [ruleFlowStep, setRuleFlowStep] = useState(1)
 
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -522,10 +564,10 @@ export default function AdminPage() {
   const [userSortDir, setUserSortDir] = useState('asc')
   const [cohortSortDir, setCohortSortDir] = useState('asc')
   const [rankingSortDir, setRankingSortDir] = useState('desc')
+  const [projectStatusFilter, setProjectStatusFilter] = useState('all')
 
   const [panelOpen, setPanelOpen] = useState({
     projectsList: true,
-    projectsForm: true,
     rulesList: true,
     rulesForm: true,
     rulesRuns: true,
@@ -543,9 +585,21 @@ export default function AdminPage() {
     setPanelOpen((prev) => ({ ...prev, [panelKey]: !prev[panelKey] }))
   }
 
+  const projectStatusCounts = useMemo(() => {
+    const rows = projects || []
+    return {
+      all: rows.length,
+      published: rows.filter((p) => String(p.project_status || '').toLowerCase() === 'published').length,
+      draft: rows.filter((p) => String(p.project_status || '').toLowerCase() === 'draft').length,
+      archived: rows.filter((p) => String(p.project_status || '').toLowerCase() === 'archived').length,
+    }
+  }, [projects])
+
   const filteredProjects = useMemo(() => {
     const query = projectQuery.trim().toLowerCase()
     const rows = (projects || []).filter((row) => {
+      const status = String(row.project_status || 'draft').toLowerCase()
+      if (projectStatusFilter !== 'all' && status !== projectStatusFilter) return false
       if (!query) return true
       const text = `${row.project_title || ''} ${row.organization || ''}`.toLowerCase()
       return text.includes(query)
@@ -554,7 +608,7 @@ export default function AdminPage() {
       String(a.project_title || a.organization || '').localeCompare(String(b.project_title || b.organization || ''))
     )
     return projectSortDir === 'asc' ? sorted : sorted.reverse()
-  }, [projects, projectQuery, projectSortDir])
+  }, [projects, projectQuery, projectSortDir, projectStatusFilter])
 
   const selectedAdminProject = useMemo(() => {
     if (!editingProjectId) return null
@@ -805,6 +859,9 @@ export default function AdminPage() {
       nodeMeta.set(row.user_id, {
         id: row.user_id,
         label: row.display_name || row.email || `User ${row.user_id}`,
+        displayName: row.display_name || row.email || `User ${row.user_id}`,
+        email: row.email || '',
+        profileImageUrl: row.profile_image_url || '',
       })
     }
 
@@ -852,8 +909,19 @@ export default function AdminPage() {
     const selectedEdges = edges.filter((edge) => selectedSet.has(edge.source) && selectedSet.has(edge.target))
 
     const nodes = selectedNodeIds.map((id, idx) => {
-      const label = nodeMeta.get(id)?.label || `User ${id}`
-      return { id, label, degree: degree.get(id) || 0, rank: idx + 1 }
+      const node = nodeMeta.get(id) || {}
+      const label = node.label || `User ${id}`
+      return {
+        id,
+        label,
+        degree: degree.get(id) || 0,
+        rank: idx + 1,
+        imageUrl: resolveProfileImageUrl({
+          displayName: node.displayName,
+          email: node.email,
+          profileImageUrl: node.profileImageUrl,
+        }),
+      }
     })
 
     const drawableEdges = selectedEdges
@@ -889,6 +957,7 @@ export default function AdminPage() {
       return {
         label: displayForChoice(choice),
         email: choice?.email || '',
+        profileImageUrl: choice?.profile_image_url || target?.profile_image_url || '',
         comment: (choice?.comment || '').trim(),
         userId: target?.user_id ?? null,
       }
@@ -908,6 +977,7 @@ export default function AdminPage() {
             incomingWants.push({
               label: displayForRow(row),
               email: row.email || '',
+              profileImageUrl: row.profile_image_url || '',
               comment: (choice?.comment || '').trim(),
               userId: row.user_id,
             })
@@ -919,6 +989,7 @@ export default function AdminPage() {
             incomingAvoids.push({
               label: displayForRow(row),
               email: row.email || '',
+              profileImageUrl: row.profile_image_url || '',
               comment: (choice?.comment || '').trim(),
               userId: row.user_id,
             })
@@ -948,6 +1019,7 @@ export default function AdminPage() {
       userId: selectedRow.user_id,
       displayName: selectedRow.display_name || selectedRow.email || `User ${selectedRow.user_id}`,
       email: selectedRow.email || '',
+      profileImageUrl: selectedRow.profile_image_url || '',
       wantCount: selectedRow.want_count || outgoingWants.length,
       avoidCount: selectedRow.avoid_count || outgoingAvoids.length,
       outgoingWants,
@@ -1303,12 +1375,26 @@ export default function AdminPage() {
     setProjectSlugTouched(Boolean(project.slug))
     setProjectSummary(project.project_summary || '')
     setProjectDescription(project.project_description || '')
+    setProjectMinimumDeliverables(project.minimum_deliverables || '')
+    setProjectStretchGoals(project.stretch_goals || '')
+    setProjectLongTermImpact(project.long_term_impact || '')
+    setProjectScopeClarity(project.scope_clarity || '')
+    setProjectScopeClarityOther(project.scope_clarity_other || '')
+    setProjectPublicationPotential(project.publication_potential || '')
+    setProjectDataAccess(project.data_access || '')
     setProjectCoverImageUrl(project.cover_image_url || '')
     setProjectContactName(project.contact_name || '')
     setProjectContactEmail(project.contact_email || '')
     setProjectSkills(Array.isArray(project.required_skills) ? project.required_skills.join(', ') : '')
+    setProjectSkillsOther(project.required_skills_other || '')
     setProjectDomains(
       Array.isArray(project.technical_domains) ? project.technical_domains.join(', ') : ''
+    )
+    setProjectSupplementaryDocuments(
+      Array.isArray(project.supplementary_documents) ? project.supplementary_documents.join('\n') : ''
+    )
+    setProjectVideoLinks(
+      Array.isArray(project.video_links) ? project.video_links.join('\n') : ''
     )
     setProjectCohortId(project.cohort_id ? String(project.cohort_id) : '')
     setProjectCompanyId(project.company_id ? String(project.company_id) : '')
@@ -1325,11 +1411,21 @@ export default function AdminPage() {
     setProjectSlugTouched(false)
     setProjectSummary('')
     setProjectDescription('')
+    setProjectMinimumDeliverables('')
+    setProjectStretchGoals('')
+    setProjectLongTermImpact('')
+    setProjectScopeClarity('')
+    setProjectScopeClarityOther('')
+    setProjectPublicationPotential('')
+    setProjectDataAccess('')
     setProjectCoverImageUrl('')
     setProjectContactName('')
     setProjectContactEmail('')
     setProjectSkills('')
+    setProjectSkillsOther('')
     setProjectDomains('')
+    setProjectSupplementaryDocuments('')
+    setProjectVideoLinks('')
     setProjectCohortId('')
     setProjectCompanyId('')
     setProjectStatus('draft')
@@ -1345,11 +1441,21 @@ export default function AdminPage() {
     setProjectSlugTouched(false)
     setProjectSummary('')
     setProjectDescription('')
+    setProjectMinimumDeliverables('')
+    setProjectStretchGoals('')
+    setProjectLongTermImpact('')
+    setProjectScopeClarity('')
+    setProjectScopeClarityOther('')
+    setProjectPublicationPotential('')
+    setProjectDataAccess('')
     setProjectCoverImageUrl('')
     setProjectContactName('')
     setProjectContactEmail('')
     setProjectSkills('')
+    setProjectSkillsOther('')
     setProjectDomains('')
+    setProjectSupplementaryDocuments('')
+    setProjectVideoLinks('')
     setProjectCohortId('')
     setProjectCompanyId('')
     setProjectStatus('draft')
@@ -1530,14 +1636,28 @@ export default function AdminPage() {
       project_title: projectTitle.trim() || null,
       project_summary: projectSummary.trim() || null,
       project_description: projectDescription.trim() || null,
+      minimum_deliverables: projectMinimumDeliverables.trim() || null,
+      stretch_goals: projectStretchGoals.trim() || null,
+      long_term_impact: projectLongTermImpact.trim() || null,
+      scope_clarity: projectScopeClarity.trim() || null,
+      scope_clarity_other: projectScopeClarityOther.trim() || null,
+      publication_potential: projectPublicationPotential.trim() || null,
+      data_access: projectDataAccess.trim() || null,
       cover_image_url: projectCoverImageUrl.trim() || null,
       contact_name: projectContactName.trim() || null,
       contact_email: projectContactEmail.trim() || null,
       required_skills: projectSkills
         ? projectSkills.split(',').map((s) => s.trim()).filter(Boolean)
         : [],
+      required_skills_other: projectSkillsOther.trim() || null,
       technical_domains: projectDomains
         ? projectDomains.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
+      supplementary_documents: projectSupplementaryDocuments
+        ? projectSupplementaryDocuments.split('\n').map((s) => s.trim()).filter(Boolean)
+        : [],
+      video_links: projectVideoLinks
+        ? projectVideoLinks.split('\n').map((s) => s.trim()).filter(Boolean)
         : [],
       cohort_id: projectCohortId ? Number(projectCohortId) : null,
       project_status: projectStatus || 'draft',
@@ -1663,7 +1783,15 @@ export default function AdminPage() {
     setRulePenaltyAvoid(String(item.penalty_avoid ?? 100))
     setRuleNotes(item.notes || '')
     setRuleFormError('')
+    setRuleFlowStep(1)
+    setRuleFlowOpen(true)
     refreshSavedAssignmentRuns(item.id)
+  }
+
+  function openCreateRuleFlow() {
+    resetRuleForm()
+    setRuleFlowStep(1)
+    setRuleFlowOpen(true)
   }
 
   function openRuleExplainer(item) {
@@ -1672,19 +1800,9 @@ export default function AdminPage() {
   }
 
   function openRuleExplainerFromForm() {
-    const selected =
-      (editingRuleId
-        ? (assignmentRules || []).find((row) => row.id === editingRuleId)
-        : null) ||
-      activeAssignmentRule ||
-      (assignmentRules || [])[0]
-
-    if (selected) {
-      openRuleExplainer(selected)
-      return
+    if (ruleFlowOpen) {
+      setRuleFlowOpen(false)
     }
-
-    // Fallback when no saved config exists yet: explain using current form inputs.
     openRuleExplainer({
       name: ruleName || 'Draft Assignment Rule',
       cohort_id: ruleFormCohortId ? Number(ruleFormCohortId) : null,
@@ -1837,6 +1955,7 @@ export default function AdminPage() {
     setRulePenaltyAvoid('100')
     setRuleNotes('')
     setRuleFormError('')
+    setRuleFlowStep(1)
   }
 
   function parseRuleForm() {
@@ -1899,6 +2018,7 @@ export default function AdminPage() {
       await adminCreateAssignmentRule(payload)
       setSuccess('Assignment rule config created.')
       resetRuleForm()
+      setRuleFlowOpen(false)
       await refreshAssignmentRules(payload.cohort_id ? String(payload.cohort_id) : '')
     } catch (err) {
       setError(String(err?.message || 'Failed to create assignment rule config'))
@@ -1918,6 +2038,7 @@ export default function AdminPage() {
     try {
       await adminUpdateAssignmentRule(editingRuleId, payload)
       setSuccess('Assignment rule config updated.')
+      setRuleFlowOpen(false)
       await refreshAssignmentRules(payload.cohort_id ? String(payload.cohort_id) : '')
     } catch (err) {
       setError(String(err?.message || 'Failed to update assignment rule config'))
@@ -1971,6 +2092,21 @@ export default function AdminPage() {
       setError(String(err?.message || 'Failed to save assignment snapshot'))
     } finally {
       setSavingAssignmentRun(false)
+    }
+  }
+
+  async function handleLoadSavedAssignmentRun(run) {
+    if (!run?.id || !run?.rule_config_id) return
+    resetFlash()
+    setPreviewLoading(true)
+    try {
+      const loaded = await adminGetSavedAssignmentRun(run.rule_config_id, run.id)
+      setPreviewResult(loaded)
+      setSuccess('Loaded saved snapshot into preview output.')
+    } catch (err) {
+      setError(String(err?.message || 'Failed to load saved snapshot'))
+    } finally {
+      setPreviewLoading(false)
     }
   }
 
@@ -2061,21 +2197,6 @@ export default function AdminPage() {
       setError(String(err?.message || 'Failed to upload student CSV'))
     } finally {
       setUploadingCsv(false)
-    }
-  }
-
-  async function handleReopenSubmission(targetUserId, targetEmail) {
-    if (!targetUserId) return
-    const check = window.prompt('Type the user email to confirm reopening this submission.')
-    if (!check || check.trim() !== String(targetEmail || '').trim()) return
-
-    resetFlash()
-    try {
-      await adminReopenRankingSubmission(targetUserId)
-      setSuccess('Submission reopened. Student can edit rankings again.')
-      await refreshRankingSubmissions()
-    } catch (err) {
-      setError(String(err?.message || 'Failed to reopen submission'))
     }
   }
 
@@ -2186,7 +2307,7 @@ export default function AdminPage() {
   }, [activeTab])
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div className="admin-compact min-h-screen bg-slate-50 pb-20">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
         <AppHeader />
 
@@ -2200,12 +2321,12 @@ export default function AdminPage() {
         ) : null}
 
         <div className="grid grid-cols-1 xl:grid-cols-[270px_1fr] gap-6 items-start">
-          <aside className="card p-4 xl:sticky xl:top-6 space-y-4">
+          <aside className="card p-3 sm:p-4 xl:sticky xl:top-6 space-y-3 sm:space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-slate-400">Admin Workspace</div>
-                <div className="text-xl font-heading text-duke-900 mt-1">{activeTabMeta.label}</div>
-                <div className="text-sm text-slate-500 mt-1">{activeTabMeta.hint}</div>
+                <div className="text-[10px] sm:text-[11px] uppercase tracking-[0.12em] font-semibold text-slate-400">Admin Workspace</div>
+                <div className="text-lg sm:text-xl font-heading text-duke-900 mt-1">{activeTabMeta.label}</div>
+                <div className="hidden sm:block text-sm text-slate-500 mt-1">{activeTabMeta.hint}</div>
               </div>
               <div className="relative">
                 <button
@@ -2310,29 +2431,29 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 sm:px-3 py-1.5 sm:py-2">
                 <div className="text-[11px] text-slate-500">Projects</div>
-                <div className="text-lg font-semibold text-slate-800">{projects.length}</div>
+                <div className="text-base sm:text-lg font-semibold text-slate-800">{projects.length}</div>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 sm:px-3 py-1.5 sm:py-2">
                 <div className="text-[11px] text-slate-500">Companies</div>
-                <div className="text-lg font-semibold text-slate-800">{companies.length}</div>
+                <div className="text-base sm:text-lg font-semibold text-slate-800">{companies.length}</div>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 sm:px-3 py-1.5 sm:py-2">
                 <div className="text-[11px] text-slate-500">Users</div>
-                <div className="text-lg font-semibold text-slate-800">{users.length}</div>
+                <div className="text-base sm:text-lg font-semibold text-slate-800">{users.length}</div>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 sm:px-3 py-1.5 sm:py-2">
                 <div className="text-[11px] text-slate-500">Cohorts</div>
-                <div className="text-lg font-semibold text-slate-800">{cohorts.length}</div>
+                <div className="text-base sm:text-lg font-semibold text-slate-800">{cohorts.length}</div>
               </div>
             </div>
 
-            <div className="space-y-3" role="tablist" aria-label="Admin sections">
+            <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Admin sections">
               {Object.entries(groupedAdminTabs).map(([groupKey, tabs]) => (
-                <div key={groupKey} className="space-y-1.5">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400 px-1">
+                <div key={groupKey} className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-0.5">
                     {tabGroupMeta[groupKey] || groupKey}
                   </div>
                   {tabs.map((tab) => {
@@ -2347,13 +2468,13 @@ export default function AdminPage() {
                         aria-selected={isActive}
                         className={
                           isActive
-                            ? 'w-full text-left px-3 py-2.5 rounded-lg bg-duke-900 text-white shadow-sm'
-                            : 'w-full text-left px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            ? 'w-full text-left px-2 py-1.5 rounded-md bg-duke-900 text-white shadow-sm'
+                            : 'w-full text-left px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                         }
                         onClick={() => setActiveTab(tab.key)}
                       >
-                        <div className="font-semibold text-sm">{tab.label}</div>
-                        <div className={isActive ? 'text-[11px] text-white/80' : 'text-[11px] text-slate-500'}>{tab.hint}</div>
+                        <div className="font-semibold text-[11px] sm:text-xs leading-tight">{tab.label}</div>
+                        <div className={`hidden sm:block ${isActive ? 'text-[11px] text-white/80' : 'text-[11px] text-slate-500'}`}>{tab.hint}</div>
                       </button>
                     )
                   })}
@@ -2365,7 +2486,7 @@ export default function AdminPage() {
           <section className="space-y-6">
         {activeTab === 'projects' ? (
           <div
-            className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-6"
+            className="grid grid-cols-1 gap-6"
             role="tabpanel"
             id="admin-panel-projects"
             aria-labelledby="admin-tab-projects"
@@ -2373,28 +2494,37 @@ export default function AdminPage() {
             <div className="card p-6">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-lg font-heading text-duke-900">Projects</div>
-                <button type="button" className="btn-secondary" onClick={() => togglePanel('projectsList')}>
-                  {panelOpen.projectsList ? 'Collapse' : 'Expand'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={openCreateProjectDrawer}
+                  >
+                    New project
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => togglePanel('projectsList')}>
+                    {panelOpen.projectsList ? 'Collapse' : 'Expand'}
+                  </button>
+                </div>
               </div>
               {panelOpen.projectsList ? (
               <>
               <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
                 <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="text-[11px] text-slate-500">Total Projects</div>
-                  <div className="text-base font-semibold text-slate-800">{projects.length}</div>
+                  <div className="text-base font-semibold text-slate-800">{projectStatusCounts.all}</div>
                 </div>
                 <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="text-[11px] text-slate-500">Published</div>
-                  <div className="text-base font-semibold text-slate-800">{projects.filter((p) => String(p.project_status || '').toLowerCase() === 'published').length}</div>
+                  <div className="text-base font-semibold text-slate-800">{projectStatusCounts.published}</div>
                 </div>
                 <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="text-[11px] text-slate-500">Draft</div>
-                  <div className="text-base font-semibold text-slate-800">{projects.filter((p) => String(p.project_status || '').toLowerCase() === 'draft').length}</div>
+                  <div className="text-base font-semibold text-slate-800">{projectStatusCounts.draft}</div>
                 </div>
                 <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="text-[11px] text-slate-500">Archived</div>
-                  <div className="text-base font-semibold text-slate-800">{projects.filter((p) => String(p.project_status || '').toLowerCase() === 'archived').length}</div>
+                  <div className="text-base font-semibold text-slate-800">{projectStatusCounts.archived}</div>
                 </div>
               </div>
 
@@ -2413,83 +2543,114 @@ export default function AdminPage() {
                   Sort {projectSortDir === 'asc' ? 'A-Z' : 'Z-A'}
                 </button>
               </div>
-              <div className="mt-4 space-y-2 max-h-[520px] overflow-auto">
-                {filteredProjects.map((project) => (
-                  <div
-                    key={project.project_id}
-                    className="rounded-card border border-slate-200 bg-white px-3 py-2"
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {[
+                  { key: 'all', label: 'All', count: projectStatusCounts.all },
+                  { key: 'published', label: 'Published', count: projectStatusCounts.published },
+                  { key: 'draft', label: 'Draft', count: projectStatusCounts.draft },
+                  { key: 'archived', label: 'Archived', count: projectStatusCounts.archived },
+                ].map((status) => (
+                  <button
+                    key={status.key}
+                    type="button"
+                    className={
+                      projectStatusFilter === status.key
+                        ? 'rounded-full border border-duke-700 bg-duke-50 px-3 py-1 text-xs font-semibold text-duke-800'
+                        : 'rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50'
+                    }
+                    onClick={() => setProjectStatusFilter(status.key)}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        className="text-left"
-                        onClick={() => fillProjectForm(project)}
-                      >
-                        <div className="text-sm font-semibold text-slate-800">
-                          {project.project_title || project.organization}
-                        </div>
-                        <div className="text-xs text-slate-500 flex items-center gap-2">
-                          <span>{project.organization}</span>
-                          <span className={
-                            String(project.project_status || '').toLowerCase() === 'published'
-                              ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
-                              : String(project.project_status || '').toLowerCase() === 'archived'
-                                ? 'rounded-full border border-slate-300 bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700'
-                                : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
-                          }>
-                            {String(project.project_status || 'draft')}
-                          </span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => handleDeleteProject(project.project_id, project.organization)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+                    {status.label} ({status.count})
+                  </button>
                 ))}
+              </div>
+              <div className="mt-4">
+                <div className="space-y-2">
+                  {filteredProjects.map((project) => {
+                    const isSelected = Number(editingProjectId) === Number(project.project_id)
+                    return (
+                      <div
+                        key={project.project_id}
+                        className={
+                          isSelected
+                            ? 'rounded-card border border-duke-700 bg-duke-50/40 px-3 py-2.5'
+                            : 'rounded-card border border-slate-200 bg-white px-3 py-2.5 hover:border-duke-700/30 transition-colors'
+                        }
+                      >
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-center">
+                          <button
+                            type="button"
+                            className="text-left min-w-0"
+                            onClick={() => fillProjectForm(project)}
+                          >
+                            <div className="text-xs sm:text-sm font-semibold text-slate-800 truncate">
+                              {project.project_title || project.organization}
+                            </div>
+                            <div className="text-[11px] sm:text-xs text-slate-500 truncate">
+                              {project.organization}
+                              {project.cohort_name || project.cohort ? (
+                                <span className="ml-2 text-slate-400">{project.cohort_name || project.cohort}</span>
+                              ) : null}
+                            </div>
+                          </button>
+                          <div className="flex items-center justify-start sm:justify-end gap-1.5 sm:gap-2">
+                            <span className={
+                              String(project.project_status || '').toLowerCase() === 'published'
+                                ? 'rounded-full border border-emerald-300 bg-emerald-100 px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold uppercase text-emerald-700'
+                                : String(project.project_status || '').toLowerCase() === 'archived'
+                                  ? 'rounded-full border border-slate-300 bg-slate-200 px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold uppercase text-slate-700'
+                                  : 'rounded-full border border-amber-300 bg-amber-100 px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold uppercase text-amber-700'
+                            }>
+                              {String(project.project_status || 'draft')}
+                            </span>
+                            {Number(project.total_comment_count || 0) > 0 ? (
+                              <span
+                                className={
+                                  Number(project.unresolved_comment_count || 0) > 0
+                                    ? 'rounded-full border border-amber-300 bg-amber-100 px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold text-amber-700'
+                                    : 'rounded-full border border-sky-200 bg-sky-50 px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold text-sky-700'
+                                }
+                                title={`${Number(project.unresolved_comment_count || 0)} unresolved`}
+                              >
+                                Comments {Number(project.total_comment_count || 0)}
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-duke-800"
+                              onClick={() => fillProjectForm(project)}
+                              aria-label={`Edit ${project.project_title || project.organization || 'project'}`}
+                              title="Edit project"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-md border border-rose-300 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                              onClick={() => handleDeleteProject(project.project_id, project.organization)}
+                              aria-label={`Delete ${project.project_title || project.organization || 'project'}`}
+                              title="Delete project"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M19 6l-1 14H6L5 6" />
+                                <path d="M10 11v6" />
+                                <path d="M14 11v6" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
                 {filteredProjects.length === 0 ? (
                   <div className="text-sm text-slate-400">{projectQuery ? 'No matching projects.' : 'No projects yet.'}</div>
                 ) : null}
-              </div>
-              </>
-              ) : null}
-            </div>
-
-            <div className="card p-6">
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-heading text-duke-900">Project Editor</div>
-                <button type="button" className="btn-secondary" onClick={() => togglePanel('projectsForm')}>
-                  {panelOpen.projectsForm ? 'Collapse' : 'Expand'}
-                </button>
-              </div>
-              {panelOpen.projectsForm ? (
-              <>
-              <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-4 space-y-3">
-                <div className="text-sm text-slate-600">
-                  Create or edit projects in the slide panel. Choose a project from the list or open a new one.
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={openCreateProjectDrawer}
-                  >
-                    New project
-                  </button>
-                  {editingProjectId ? (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => setProjectDetailOpen(true)}
-                    >
-                      Reopen selected project
-                    </button>
-                  ) : null}
-                </div>
               </div>
               </>
               ) : null}
@@ -2529,9 +2690,30 @@ export default function AdminPage() {
                         ) : null}
                       </div>
                     </div>
-                    <button type="button" className="btn-secondary" onClick={() => setProjectDetailOpen(false)}>
-                      Close
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {editingProjectId && Number(selectedAdminProject?.total_comment_count || 0) > 0 ? (
+                        <button
+                          type="button"
+                          className="btn-secondary inline-flex items-center gap-2"
+                          onClick={async () => {
+                            await refreshSelectedProjectComments()
+                            setProjectDetailCommentsOpen(true)
+                          }}
+                          title="View project comments"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                          </svg>
+                          <span>Comments</span>
+                          <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                            {selectedProjectCommentStats.unresolved}/{selectedProjectCommentStats.total}
+                          </span>
+                        </button>
+                      ) : null}
+                      <button type="button" className="btn-secondary" onClick={() => setProjectDetailOpen(false)}>
+                        Close
+                      </button>
+                    </div>
                   </div>
 
                   <form className="mt-4 space-y-3" onSubmit={editingProjectId ? handleUpdateProject : handleCreateProject}>
@@ -2583,6 +2765,38 @@ export default function AdminPage() {
                       <textarea className="input-base h-24" value={projectDescription} onChange={(e) => setProjectDescription(e.target.value)} />
                     </div>
                     <div>
+                      <div className="label">Minimum deliverables</div>
+                      <textarea className="input-base h-20" value={projectMinimumDeliverables} onChange={(e) => setProjectMinimumDeliverables(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label">Stretch goals</div>
+                      <textarea className="input-base h-20" value={projectStretchGoals} onChange={(e) => setProjectStretchGoals(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label">Long-term impact</div>
+                      <textarea className="input-base h-20" value={projectLongTermImpact} onChange={(e) => setProjectLongTermImpact(e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <div className="label">Scope clarity</div>
+                        <input className="input-base" value={projectScopeClarity} onChange={(e) => setProjectScopeClarity(e.target.value)} />
+                      </div>
+                      <div>
+                        <div className="label">Scope clarity (other)</div>
+                        <input className="input-base" value={projectScopeClarityOther} onChange={(e) => setProjectScopeClarityOther(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <div className="label">Publication potential</div>
+                        <input className="input-base" value={projectPublicationPotential} onChange={(e) => setProjectPublicationPotential(e.target.value)} />
+                      </div>
+                      <div>
+                        <div className="label">Data access</div>
+                        <input className="input-base" value={projectDataAccess} onChange={(e) => setProjectDataAccess(e.target.value)} />
+                      </div>
+                    </div>
+                    <div>
                       <div className="label">Cover image URL</div>
                       <input
                         className="input-base"
@@ -2625,8 +2839,20 @@ export default function AdminPage() {
                       <input className="input-base" value={projectSkills} onChange={(e) => setProjectSkills(e.target.value)} />
                     </div>
                     <div>
+                      <div className="label">Other required skills</div>
+                      <input className="input-base" value={projectSkillsOther} onChange={(e) => setProjectSkillsOther(e.target.value)} />
+                    </div>
+                    <div>
                       <div className="label">Technical domains (comma-separated)</div>
                       <input className="input-base" value={projectDomains} onChange={(e) => setProjectDomains(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label">Supplementary documents (one URL per line)</div>
+                      <textarea className="input-base h-24" value={projectSupplementaryDocuments} onChange={(e) => setProjectSupplementaryDocuments(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label">Video links (one URL per line)</div>
+                      <textarea className="input-base h-24" value={projectVideoLinks} onChange={(e) => setProjectVideoLinks(e.target.value)} />
                     </div>
                     <div className="flex items-center gap-2 pt-1">
                       <button type="submit" className="btn-primary flex-1">
@@ -2638,100 +2864,102 @@ export default function AdminPage() {
                     </div>
                   </form>
 
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-[11px] text-slate-500">Total</div>
-                      <div className="text-base font-semibold text-slate-800">{selectedProjectCommentStats.total}</div>
-                    </div>
-                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-[11px] text-slate-500">Unresolved</div>
-                      <div className="text-base font-semibold text-amber-700">{selectedProjectCommentStats.unresolved}</div>
-                    </div>
-                    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                      <div className="text-[11px] text-slate-500">Resolved</div>
-                      <div className="text-base font-semibold text-emerald-700">{selectedProjectCommentStats.resolved}</div>
-                    </div>
-                  </div>
+                  {projectDetailCommentsOpen ? (
+                    <div className="fixed inset-0 z-50" aria-live="polite">
+                      <button
+                        type="button"
+                        className="absolute inset-0 bg-slate-900/30"
+                        aria-label="Close project comments"
+                        onClick={() => setProjectDetailCommentsOpen(false)}
+                      />
+                      <aside className="absolute right-0 top-0 h-full w-full max-w-lg border-l border-slate-200 bg-white shadow-2xl p-5 overflow-auto">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Project Comments</div>
+                            <div className="text-lg font-heading text-duke-900">Comment Review</div>
+                          </div>
+                          <button type="button" className="btn-secondary" onClick={() => setProjectDetailCommentsOpen(false)}>
+                            Close
+                          </button>
+                        </div>
 
-                  <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-800">Comment Review</div>
-                        <div className="text-xs text-slate-500">Expand only when you need full detail.</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="btn-secondary text-xs"
-                          onClick={() => refreshSelectedProjectComments()}
-                          disabled={commentActionsLoading || selectedProjectCommentsLoading}
-                        >
-                          Refresh
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary text-xs"
-                          onClick={() => setProjectDetailCommentsOpen((v) => !v)}
-                        >
-                          {projectDetailCommentsOpen ? 'Hide details' : 'Show details'}
-                        </button>
-                      </div>
-                    </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="text-[11px] text-slate-500">Total</div>
+                            <div className="text-base font-semibold text-slate-800">{selectedProjectCommentStats.total}</div>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="text-[11px] text-slate-500">Unresolved</div>
+                            <div className="text-base font-semibold text-amber-700">{selectedProjectCommentStats.unresolved}</div>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="text-[11px] text-slate-500">Resolved</div>
+                            <div className="text-base font-semibold text-emerald-700">{selectedProjectCommentStats.resolved}</div>
+                          </div>
+                        </div>
 
-                    {editingProjectId && projectDetailCommentsOpen ? (
-                      <div className="mt-3 max-h-96 overflow-auto space-y-2">
-                        {selectedProjectCommentsLoading ? (
-                          <div className="text-sm text-slate-500">Loading comments...</div>
-                        ) : selectedProjectComments.length ? (
-                          selectedProjectComments.map((item) => {
-                            const commentId = item?.id
-                            const isResolved = Boolean(item?.is_resolved)
-                            const created = item?.created_at ? new Date(item.created_at) : null
-                            const createdText = created && !Number.isNaN(created.getTime())
-                              ? created.toLocaleString()
-                              : 'Unknown time'
-                            return (
-                              <div key={commentId} className="rounded border border-slate-200 bg-white p-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="text-xs text-slate-500">
-                                    <span className="font-semibold text-slate-700">
-                                      {item?.student_display_name || item?.student_email || 'Student'}
+                        <div className="mt-3 flex items-center justify-end">
+                          <button
+                            type="button"
+                            className="btn-secondary text-xs"
+                            onClick={() => refreshSelectedProjectComments()}
+                            disabled={commentActionsLoading || selectedProjectCommentsLoading}
+                          >
+                            Refresh
+                          </button>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {selectedProjectCommentsLoading ? (
+                            <div className="text-sm text-slate-500">Loading comments...</div>
+                          ) : selectedProjectComments.length ? (
+                            selectedProjectComments.map((item) => {
+                              const commentId = item?.id
+                              const isResolved = Boolean(item?.is_resolved)
+                              const created = item?.created_at ? new Date(item.created_at) : null
+                              const createdText = created && !Number.isNaN(created.getTime())
+                                ? created.toLocaleString()
+                                : 'Unknown time'
+                              return (
+                                <div key={commentId} className="rounded border border-slate-200 bg-white p-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="text-xs text-slate-500">
+                                      <span className="font-semibold text-slate-700">
+                                        {item?.student_display_name || item?.student_email || 'Student'}
+                                      </span>
+                                      <span>{' · '}{createdText}</span>
+                                    </div>
+                                    <span
+                                      className={
+                                        isResolved
+                                          ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
+                                          : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
+                                      }
+                                    >
+                                      {isResolved ? 'Resolved' : 'Unresolved'}
                                     </span>
-                                    <span>{' · '}{createdText}</span>
                                   </div>
-                                  <span
-                                    className={
-                                      isResolved
-                                        ? 'rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700'
-                                        : 'rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700'
-                                    }
-                                  >
-                                    {isResolved ? 'Resolved' : 'Unresolved'}
-                                  </span>
+                                  <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item?.comment || ''}</div>
+                                  <div className="mt-2 flex justify-end">
+                                    <button
+                                      type="button"
+                                      className="btn-secondary text-xs"
+                                      disabled={commentActionsLoading}
+                                      onClick={() => handleUpdateProjectComment(commentId, !isResolved)}
+                                    >
+                                      {isResolved ? 'Mark unresolved' : 'Mark resolved'}
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{item?.comment || ''}</div>
-                                <div className="mt-2 flex justify-end">
-                                  <button
-                                    type="button"
-                                    className="btn-secondary text-xs"
-                                    disabled={commentActionsLoading}
-                                    onClick={() => handleUpdateProjectComment(commentId, !isResolved)}
-                                  >
-                                    {isResolved ? 'Mark unresolved' : 'Mark resolved'}
-                                  </button>
-                                </div>
-                              </div>
-                            )
-                          })
-                        ) : (
-                          <div className="text-sm text-slate-500">No comments for this project yet.</div>
-                        )}
-                      </div>
-                    ) : null}
-                    {!editingProjectId ? (
-                      <div className="mt-3 text-xs text-slate-500">Save the project first to receive and review comments.</div>
-                    ) : null}
-                  </div>
+                              )
+                            })
+                          ) : (
+                            <div className="text-sm text-slate-500">No comments for this project yet.</div>
+                          )}
+                        </div>
+                      </aside>
+                    </div>
+                  ) : null}
 
 
                 </aside>
@@ -2880,96 +3108,167 @@ export default function AdminPage() {
             </div>
 
             <div className="card p-6">
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-heading text-duke-900">{editingRuleId ? 'Edit assignment rule' : 'Create assignment rule'}</div>
-                <button type="button" className="btn-secondary" onClick={() => togglePanel('rulesForm')}>
-                  {panelOpen.rulesForm ? 'Collapse' : 'Expand'}
-                </button>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-lg font-heading text-duke-900">Rule Builder</div>
+                  <div className="text-sm text-slate-500">Use a guided slide-over flow instead of editing everything inline.</div>
+                </div>
               </div>
 
-              {panelOpen.rulesForm ? (
-                <>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button type="button" className="btn-secondary" onClick={openRuleExplainerFromForm}>
-                      What do these rules mean?
-                    </button>
-                    <button type="button" className="btn-secondary" onClick={resetRuleForm}>
-                      New config
+              <div className="mt-4 rounded-card border border-slate-200 bg-slate-50 p-4 space-y-3">
+                <div className="text-sm text-slate-600">
+                  Configure basics, constraints, scoring, and review in separate steps.
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" className="btn-primary" onClick={openCreateRuleFlow}>
+                    New rule flow
+                  </button>
+                </div>
+              </div>
+            </div>
+            </div>
+
+            {ruleFlowOpen ? (
+              <div className="fixed inset-0 z-40" aria-live="polite">
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-slate-900/30"
+                  aria-label="Close rule builder"
+                  onClick={() => setRuleFlowOpen(false)}
+                />
+                <aside className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-slate-200 bg-white shadow-2xl p-5 overflow-auto">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Rule Builder</div>
+                      <div className="text-lg font-heading text-duke-900">
+                        {editingRuleId ? 'Edit assignment rule' : 'Create assignment rule'}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">Step {ruleFlowStep} of 4</div>
+                    </div>
+                    <button type="button" className="btn-secondary" onClick={() => setRuleFlowOpen(false)}>
+                      Close
                     </button>
                   </div>
 
+                  <div className="mt-4 grid grid-cols-4 gap-2">
+                    {[1, 2, 3, 4].map((step) => (
+                      <button
+                        key={step}
+                        type="button"
+                        className={
+                          step === ruleFlowStep
+                            ? 'rounded border border-duke-700 bg-duke-50 px-2 py-2 text-xs font-semibold text-duke-800'
+                            : 'rounded border border-slate-200 bg-white px-2 py-2 text-xs text-slate-600 hover:bg-slate-50'
+                        }
+                        onClick={() => setRuleFlowStep(step)}
+                      >
+                        {step === 1 ? 'Basics' : step === 2 ? 'Constraints' : step === 3 ? 'Scoring' : 'Review'}
+                      </button>
+                    ))}
+                  </div>
+
                   <form className="mt-4 space-y-3" onSubmit={editingRuleId ? handleUpdateRule : handleCreateRule}>
-                    <div>
-                      <div className="label">Config name</div>
-                      <input className="input-base" value={ruleName} onChange={(e) => setRuleName(e.target.value)} required />
-                    </div>
-
-                    <div>
-                      <div className="label">Scope cohort</div>
-                      <select className="select-base" value={ruleFormCohortId} onChange={(e) => setRuleFormCohortId(e.target.value)}>
-                        <option value="">Global (all cohorts)</option>
-                        {cohorts.map((cohort) => (
-                          <option key={cohort.id} value={cohort.id}>
-                            {cohort.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <div className="label">Team size</div>
-                        <input className="input-base" type="number" min="3" max="5" value={ruleTeamSize} onChange={(e) => setRuleTeamSize(e.target.value)} />
-                      </div>
-                      <div>
-                        <div className="label">Max low preference/team</div>
-                        <input className="input-base" type="number" min="0" max="8" value={ruleMaxLowPreference} onChange={(e) => setRuleMaxLowPreference(e.target.value)} />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <label className="rounded-card border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between">
-                        <span>Enforce same cohort</span>
-                        <input type="checkbox" checked={ruleEnforceSameCohort} onChange={(e) => setRuleEnforceSameCohort(e.target.checked)} />
-                      </label>
-                      <label className="rounded-card border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between">
-                        <span>Hard avoid teammates</span>
-                        <input type="checkbox" checked={ruleHardAvoid} onChange={(e) => setRuleHardAvoid(e.target.checked)} />
-                      </label>
-                    </div>
-
-                    <div className="rounded-card border border-slate-200 bg-slate-50 p-3 space-y-3">
-                      <div className="text-sm font-medium text-slate-800">Weights</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {ruleFlowStep === 1 ? (
+                      <>
                         <div>
-                          <div className="label">Project preference</div>
-                          <input className="input-base" type="number" min="0" max="100" value={ruleWeightProjectPreference} onChange={(e) => setRuleWeightProjectPreference(e.target.value)} />
+                          <div className="label">Config name</div>
+                          <input className="input-base" value={ruleName} onChange={(e) => setRuleName(e.target.value)} required />
                         </div>
+
                         <div>
-                          <div className="label">Project rating</div>
-                          <input className="input-base" type="number" min="0" max="100" value={ruleWeightProjectRating} onChange={(e) => setRuleWeightProjectRating(e.target.value)} />
+                          <div className="label">Scope cohort</div>
+                          <select className="select-base" value={ruleFormCohortId} onChange={(e) => setRuleFormCohortId(e.target.value)}>
+                            <option value="">Global (all cohorts)</option>
+                            {cohorts.map((cohort) => (
+                              <option key={cohort.id} value={cohort.id}>
+                                {cohort.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <div className="label">Team size</div>
+                            <input className="input-base" type="number" min="3" max="5" value={ruleTeamSize} onChange={(e) => setRuleTeamSize(e.target.value)} />
+                          </div>
+                          <div>
+                            <div className="label">Max low preference/team</div>
+                            <input className="input-base" type="number" min="0" max="8" value={ruleMaxLowPreference} onChange={(e) => setRuleMaxLowPreference(e.target.value)} />
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+
+                    {ruleFlowStep === 2 ? (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <label className="rounded-card border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between">
+                            <span>Enforce same cohort</span>
+                            <input type="checkbox" checked={ruleEnforceSameCohort} onChange={(e) => setRuleEnforceSameCohort(e.target.checked)} />
+                          </label>
+                          <label className="rounded-card border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between">
+                            <span>Hard avoid teammates</span>
+                            <input type="checkbox" checked={ruleHardAvoid} onChange={(e) => setRuleHardAvoid(e.target.checked)} />
+                          </label>
+                        </div>
+
                         <div>
-                          <div className="label">Mutual want</div>
-                          <input className="input-base" type="number" min="0" max="100" value={ruleWeightMutualWant} onChange={(e) => setRuleWeightMutualWant(e.target.value)} />
+                          <div className="label">Avoid penalty</div>
+                          <input className="input-base" type="number" min="0" max="1000" value={rulePenaltyAvoid} onChange={(e) => setRulePenaltyAvoid(e.target.value)} />
                         </div>
+
+                        <div>
+                          <div className="label">Notes</div>
+                          <textarea className="input-base h-20" value={ruleNotes} onChange={(e) => setRuleNotes(e.target.value)} />
+                        </div>
+                      </>
+                    ) : null}
+
+                    {ruleFlowStep === 3 ? (
+                      <>
+                        <div className="rounded-card border border-slate-200 bg-slate-50 p-3 space-y-3">
+                          <div className="text-sm font-medium text-slate-800">Weights</div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <div className="label">Project preference</div>
+                              <input className="input-base" type="number" min="0" max="100" value={ruleWeightProjectPreference} onChange={(e) => setRuleWeightProjectPreference(e.target.value)} />
+                            </div>
+                            <div>
+                              <div className="label">Project rating</div>
+                              <input className="input-base" type="number" min="0" max="100" value={ruleWeightProjectRating} onChange={(e) => setRuleWeightProjectRating(e.target.value)} />
+                            </div>
+                            <div>
+                              <div className="label">Mutual want</div>
+                              <input className="input-base" type="number" min="0" max="100" value={ruleWeightMutualWant} onChange={(e) => setRuleWeightMutualWant(e.target.value)} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="rounded-card border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between">
+                          <span>Set active after save</span>
+                          <input type="checkbox" checked={ruleIsActive} onChange={(e) => setRuleIsActive(e.target.checked)} />
+                        </label>
+                      </>
+                    ) : null}
+
+                    {ruleFlowStep === 4 ? (
+                      <div className="space-y-3">
+                        <div className="rounded-card border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-sm font-semibold text-slate-800">Review</div>
+                          <div className="mt-2 text-sm text-slate-600 space-y-1">
+                            <div><span className="font-medium">Name:</span> {ruleName || '—'}</div>
+                            <div><span className="font-medium">Scope:</span> {ruleFormCohortId ? `Cohort ${ruleFormCohortId}` : 'Global'}</div>
+                            <div><span className="font-medium">Team size:</span> {ruleTeamSize}</div>
+                            <div><span className="font-medium">Weights:</span> {ruleWeightProjectPreference}/{ruleWeightProjectRating}/{ruleWeightMutualWant}</div>
+                            <div><span className="font-medium">Active:</span> {ruleIsActive ? 'Yes' : 'No'}</div>
+                          </div>
+                        </div>
+                        <button type="button" className="btn-secondary w-full" onClick={openRuleExplainerFromForm}>
+                          Open rule explainer for this config
+                        </button>
                       </div>
-                    </div>
-
-                    <div>
-                      <div className="label">Avoid penalty</div>
-                      <input className="input-base" type="number" min="0" max="1000" value={rulePenaltyAvoid} onChange={(e) => setRulePenaltyAvoid(e.target.value)} />
-                    </div>
-
-                    <div>
-                      <div className="label">Notes</div>
-                      <textarea className="input-base h-20" value={ruleNotes} onChange={(e) => setRuleNotes(e.target.value)} />
-                    </div>
-
-                    <label className="rounded-card border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between">
-                      <span>Set active after save</span>
-                      <input type="checkbox" checked={ruleIsActive} onChange={(e) => setRuleIsActive(e.target.checked)} />
-                    </label>
+                    ) : null}
 
                     {ruleFormError ? (
                       <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-card p-2.5">
@@ -2977,16 +3276,29 @@ export default function AdminPage() {
                       </div>
                     ) : null}
 
-                    <div className="sticky bottom-0 bg-white pt-3 border-t border-slate-100">
-                      <button type="submit" className="btn-primary w-full">
-                        {editingRuleId ? 'Update assignment rule' : 'Create assignment rule'}
+                    <div className="sticky bottom-0 bg-white pt-3 border-t border-slate-100 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={ruleFlowStep <= 1}
+                        onClick={() => setRuleFlowStep((s) => Math.max(1, s - 1))}
+                      >
+                        Back
                       </button>
+                      {ruleFlowStep < 4 ? (
+                        <button type="button" className="btn-primary flex-1" onClick={() => setRuleFlowStep((s) => Math.min(4, s + 1))}>
+                          Continue
+                        </button>
+                      ) : (
+                        <button type="submit" className="btn-primary flex-1">
+                          {editingRuleId ? 'Update assignment rule' : 'Create assignment rule'}
+                        </button>
+                      )}
                     </div>
                   </form>
-                </>
-              ) : null}
-            </div>
-            </div>
+                </aside>
+              </div>
+            ) : null}
 
             <div className="card p-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -2994,16 +3306,16 @@ export default function AdminPage() {
                   <div className="text-lg font-heading text-duke-900">Preview Output</div>
                   <div className="text-sm text-slate-500">Large-screen workspace for reviewing draft project teams.</div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex w-full md:w-auto flex-wrap md:flex-nowrap items-stretch md:items-center justify-end gap-2">
                   {previewResult ? (
-                    <button type="button" className="btn-secondary" onClick={handleExportTeamsCsv}>
+                    <button type="button" className="btn-secondary w-full sm:w-auto whitespace-nowrap" onClick={handleExportTeamsCsv}>
                       Export teams CSV
                     </button>
                   ) : null}
                   {previewResult ? (
                     <button
                       type="button"
-                      className="btn-secondary"
+                      className="btn-secondary w-full sm:w-auto whitespace-nowrap"
                       onClick={handleSaveAssignmentSnapshot}
                       disabled={savingAssignmentRun}
                     >
@@ -3013,7 +3325,7 @@ export default function AdminPage() {
                   {editingRuleId ? (
                     <button
                       type="button"
-                      className="btn-primary"
+                      className="btn-primary w-full sm:w-auto whitespace-nowrap"
                       onClick={() => handlePreviewRule(editingRuleId)}
                       disabled={previewLoading}
                     >
@@ -3161,7 +3473,17 @@ export default function AdminPage() {
                         {savedAssignmentRuns.map((run) => (
                           <div key={run.id} className="rounded border border-slate-200 bg-white px-2 py-1.5 flex items-center justify-between gap-2">
                             <span>#{run.id} · {run.source_preview_run_id ? `Preview ${run.source_preview_run_id}` : 'Manual'} · {run.created_at ? new Date(run.created_at).toLocaleString() : 'Unknown time'}</span>
-                            <span className="text-slate-500">Rule {run.rule_config_id}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500">Rule {run.rule_config_id}</span>
+                              <button
+                                type="button"
+                                className="btn-secondary text-xs"
+                                onClick={() => handleLoadSavedAssignmentRun(run)}
+                                disabled={previewLoading}
+                              >
+                                Load
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -3341,6 +3663,13 @@ export default function AdminPage() {
                     <div className="flex items-center gap-3 text-[11px] text-slate-500">
                       <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />Want</span>
                       <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-500" />Avoid</span>
+                      <button
+                        type="button"
+                        className="btn-secondary h-8 px-3 text-xs"
+                        onClick={() => setPartnerGraphExpanded(true)}
+                      >
+                        Expand
+                      </button>
                     </div>
                   </div>
                   <div className="mt-2 overflow-x-auto">
@@ -3527,11 +3856,27 @@ export default function AdminPage() {
                         return (
                           <>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <div className="text-sm font-semibold text-slate-800">
-                            {row.display_name || row.email || `User ${row.user_id}`}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={resolveProfileImageUrl({
+                              displayName: row.display_name,
+                              email: row.email,
+                              profileImageUrl: row.profile_image_url,
+                            })}
+                            alt={row.display_name || row.email || `User ${row.user_id}`}
+                            className="h-9 w-9 rounded-full border border-slate-200 bg-white object-cover"
+                            loading="lazy"
+                            onError={(event) => {
+                              event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                              event.currentTarget.onerror = null
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-800 truncate">
+                              {row.display_name || row.email || `User ${row.user_id}`}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate">{row.email}</div>
                           </div>
-                          <div className="text-xs text-slate-500">{row.email}</div>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-slate-500">
                           <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1">Want: {row.want_count || 0}</span>
@@ -3547,8 +3892,26 @@ export default function AdminPage() {
                           <div className="mt-2 space-y-2">
                             {(row.want || []).map((choice) => (
                               <div key={`${row.user_id}-want-${choice.student_id}`} className="rounded border border-emerald-200 bg-white px-2 py-2 text-xs">
-                                <div className="font-medium text-slate-700">{choice.full_name || choice.email || `Student ${choice.student_id}`}</div>
-                                {choice.email ? <div className="text-slate-500">{choice.email}</div> : null}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <img
+                                    src={resolveProfileImageUrl({
+                                      displayName: choice.full_name,
+                                      email: choice.email,
+                                      profileImageUrl: choice.profile_image_url,
+                                    })}
+                                    alt={choice.full_name || choice.email || `Student ${choice.student_id}`}
+                                    className="h-7 w-7 rounded-full border border-slate-200 bg-white object-cover"
+                                    loading="lazy"
+                                    onError={(event) => {
+                                      event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                                      event.currentTarget.onerror = null
+                                    }}
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="font-medium text-slate-700 truncate">{choice.full_name || choice.email || `Student ${choice.student_id}`}</div>
+                                    {choice.email ? <div className="text-slate-500 truncate">{choice.email}</div> : null}
+                                  </div>
+                                </div>
                                 {partnerIncludeComments && choice.comment ? <div className="mt-1 text-slate-600">Comment: {choice.comment}</div> : null}
                               </div>
                             ))}
@@ -3561,8 +3924,26 @@ export default function AdminPage() {
                           <div className="mt-2 space-y-2">
                             {(row.avoid || []).map((choice) => (
                               <div key={`${row.user_id}-avoid-${choice.student_id}`} className="rounded border border-rose-200 bg-white px-2 py-2 text-xs">
-                                <div className="font-medium text-slate-700">{choice.full_name || choice.email || `Student ${choice.student_id}`}</div>
-                                {choice.email ? <div className="text-slate-500">{choice.email}</div> : null}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <img
+                                    src={resolveProfileImageUrl({
+                                      displayName: choice.full_name,
+                                      email: choice.email,
+                                      profileImageUrl: choice.profile_image_url,
+                                    })}
+                                    alt={choice.full_name || choice.email || `Student ${choice.student_id}`}
+                                    className="h-7 w-7 rounded-full border border-slate-200 bg-white object-cover"
+                                    loading="lazy"
+                                    onError={(event) => {
+                                      event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                                      event.currentTarget.onerror = null
+                                    }}
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="font-medium text-slate-700 truncate">{choice.full_name || choice.email || `Student ${choice.student_id}`}</div>
+                                    {choice.email ? <div className="text-slate-500 truncate">{choice.email}</div> : null}
+                                  </div>
+                                </div>
                                 {partnerIncludeComments && choice.comment ? <div className="mt-1 text-slate-600">Comment: {choice.comment}</div> : null}
                               </div>
                             ))}
@@ -3603,7 +3984,7 @@ export default function AdminPage() {
                   Sort {companySortDir === 'asc' ? 'A-Z' : 'Z-A'}
                 </button>
               </div>
-              <div className="mt-4 space-y-2 max-h-[520px] overflow-auto">
+              <div className="mt-4 space-y-2">
                 {filteredCompanies.map((company) => (
                   <div key={company.id} className="rounded-card border border-slate-200 bg-white px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
@@ -3621,17 +4002,30 @@ export default function AdminPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          className="btn-secondary"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-duke-800"
                           onClick={() => fillCompanyForm(company)}
+                          aria-label={`Edit ${company.name || 'company'}`}
+                          title="Edit company"
                         >
-                          Edit
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
                         </button>
                         <button
                           type="button"
-                          className="btn-secondary"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                           onClick={() => handleDeleteCompany(company.id, company.name)}
+                          aria-label={`Delete ${company.name || 'company'}`}
+                          title="Delete company"
                         >
-                          Delete
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -3732,7 +4126,7 @@ export default function AdminPage() {
                   Sort {userSortDir === 'asc' ? 'A-Z' : 'Z-A'}
                 </button>
               </div>
-              <div className="mt-4 space-y-2 max-h-[520px] overflow-auto">
+              <div className="mt-4 space-y-2">
                 {filteredUsers.map((item) => (
                   <div key={item.id} className="rounded-card border border-slate-200 bg-white px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
@@ -3766,20 +4160,33 @@ export default function AdminPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          className="btn-secondary"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-duke-800"
                           onClick={() => fillUserForm(item)}
+                          aria-label={`Edit ${item.display_name || item.email || 'user'}`}
+                          title="Edit user"
                         >
-                          Edit
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
                         </button>
                         {item.id === user?.id ? (
                           <span className="text-xs text-slate-400">You</span>
                         ) : (
                           <button
                             type="button"
-                            className="btn-secondary"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                             onClick={() => handleDeleteUser(item.id, item.email)}
+                            aria-label={`Delete ${item.display_name || item.email || 'user'}`}
+                            title="Delete user"
                           >
-                            Delete
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4h8v2" />
+                              <path d="M19 6l-1 14H6L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                            </svg>
                           </button>
                         )}
                       </div>
@@ -3959,17 +4366,30 @@ export default function AdminPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          className="btn-secondary"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-duke-800"
                           onClick={() => fillCohortForm(cohort)}
+                          aria-label={`Edit ${cohort.name || 'cohort'}`}
+                          title="Edit cohort"
                         >
-                          Edit
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
                         </button>
                         <button
                           type="button"
-                          className="btn-secondary"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                           onClick={() => handleDeleteCohort(cohort.id, cohort.name)}
+                          aria-label={`Delete ${cohort.name || 'cohort'}`}
+                          title="Delete cohort"
                         >
-                          Delete
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                          </svg>
                         </button>
                       </div>
                     </div>
@@ -4194,13 +4614,7 @@ export default function AdminPage() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => handleReopenSubmission(row.user_id, row.email)}
-                    >
-                      Reopen
-                    </button>
+                    <div className="text-xs text-slate-400">Read-only</div>
                   </div>
 
                   <div className="mt-3 text-xs text-slate-500">Top {row.ranked_count}</div>
@@ -4236,9 +4650,23 @@ export default function AdminPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
-              <div>
-                <div className="text-lg font-heading text-duke-900">{selectedGraphProfile.displayName}</div>
-                <div className="text-sm text-slate-500">{selectedGraphProfile.email || `User ID ${selectedGraphProfile.userId}`}</div>
+              <div className="flex items-start gap-3 min-w-0">
+                <img
+                  src={resolveProfileImageUrl({
+                    displayName: selectedGraphProfile.displayName,
+                    email: selectedGraphProfile.email,
+                    profileImageUrl: selectedGraphProfile.profileImageUrl,
+                  })}
+                  alt={selectedGraphProfile.displayName}
+                  className="h-11 w-11 rounded-full border border-slate-200 bg-white object-cover flex-shrink-0"
+                  onError={(event) => {
+                    event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                    event.currentTarget.onerror = null
+                  }}
+                />
+                <div className="min-w-0">
+                  <div className="text-lg font-heading text-duke-900 truncate">{selectedGraphProfile.displayName}</div>
+                  <div className="text-sm text-slate-500 truncate">{selectedGraphProfile.email || `User ID ${selectedGraphProfile.userId}`}</div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                   <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1">Outgoing want: {selectedGraphProfile.outgoingWants.length}</span>
                   <span className="rounded border border-rose-200 bg-rose-50 px-2 py-1">Outgoing avoid: {selectedGraphProfile.outgoingAvoids.length}</span>
@@ -4249,6 +4677,7 @@ export default function AdminPage() {
                 </div>
                 <div className="mt-2 text-xs text-slate-500">
                   Direct mutual connections: {selectedGraphProfile.mutualWantConnections} · Conflict connections: {selectedGraphProfile.conflictConnections}
+                </div>
                 </div>
               </div>
               <button
@@ -4267,8 +4696,21 @@ export default function AdminPage() {
                   <div className="mt-2 space-y-2">
                     {selectedGraphProfile.outgoingWants.map((item, idx) => (
                       <div key={`out-want-${selectedGraphProfile.userId}-${idx}`} className="rounded border border-emerald-200 bg-white p-2 text-xs">
-                        <div className="font-semibold text-slate-700">{item.label}</div>
-                        {item.email ? <div className="text-slate-500">{item.email}</div> : null}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={resolveProfileImageUrl({ displayName: item.label, email: item.email, profileImageUrl: item.profileImageUrl })}
+                            alt={item.label}
+                            className="h-7 w-7 rounded-full border border-slate-200 bg-white object-cover flex-shrink-0"
+                            onError={(event) => {
+                              event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                              event.currentTarget.onerror = null
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-700 truncate">{item.label}</div>
+                            {item.email ? <div className="text-slate-500 truncate">{item.email}</div> : null}
+                          </div>
+                        </div>
                         {partnerIncludeComments && item.comment ? <div className="mt-1 text-slate-600">Comment: {item.comment}</div> : null}
                       </div>
                     ))}
@@ -4281,8 +4723,21 @@ export default function AdminPage() {
                   <div className="mt-2 space-y-2">
                     {selectedGraphProfile.outgoingAvoids.map((item, idx) => (
                       <div key={`out-avoid-${selectedGraphProfile.userId}-${idx}`} className="rounded border border-rose-200 bg-white p-2 text-xs">
-                        <div className="font-semibold text-slate-700">{item.label}</div>
-                        {item.email ? <div className="text-slate-500">{item.email}</div> : null}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={resolveProfileImageUrl({ displayName: item.label, email: item.email, profileImageUrl: item.profileImageUrl })}
+                            alt={item.label}
+                            className="h-7 w-7 rounded-full border border-slate-200 bg-white object-cover flex-shrink-0"
+                            onError={(event) => {
+                              event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                              event.currentTarget.onerror = null
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-700 truncate">{item.label}</div>
+                            {item.email ? <div className="text-slate-500 truncate">{item.email}</div> : null}
+                          </div>
+                        </div>
                         {partnerIncludeComments && item.comment ? <div className="mt-1 text-slate-600">Comment: {item.comment}</div> : null}
                       </div>
                     ))}
@@ -4295,8 +4750,21 @@ export default function AdminPage() {
                   <div className="mt-2 space-y-2">
                     {selectedGraphProfile.incomingWants.map((item, idx) => (
                       <div key={`in-want-${selectedGraphProfile.userId}-${idx}`} className="rounded border border-sky-200 bg-white p-2 text-xs">
-                        <div className="font-semibold text-slate-700">{item.label}</div>
-                        {item.email ? <div className="text-slate-500">{item.email}</div> : null}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={resolveProfileImageUrl({ displayName: item.label, email: item.email, profileImageUrl: item.profileImageUrl })}
+                            alt={item.label}
+                            className="h-7 w-7 rounded-full border border-slate-200 bg-white object-cover flex-shrink-0"
+                            onError={(event) => {
+                              event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                              event.currentTarget.onerror = null
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-700 truncate">{item.label}</div>
+                            {item.email ? <div className="text-slate-500 truncate">{item.email}</div> : null}
+                          </div>
+                        </div>
                         {partnerIncludeComments && item.comment ? <div className="mt-1 text-slate-600">Comment: {item.comment}</div> : null}
                       </div>
                     ))}
@@ -4309,8 +4777,21 @@ export default function AdminPage() {
                   <div className="mt-2 space-y-2">
                     {selectedGraphProfile.incomingAvoids.map((item, idx) => (
                       <div key={`in-avoid-${selectedGraphProfile.userId}-${idx}`} className="rounded border border-amber-200 bg-white p-2 text-xs">
-                        <div className="font-semibold text-slate-700">{item.label}</div>
-                        {item.email ? <div className="text-slate-500">{item.email}</div> : null}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={resolveProfileImageUrl({ displayName: item.label, email: item.email, profileImageUrl: item.profileImageUrl })}
+                            alt={item.label}
+                            className="h-7 w-7 rounded-full border border-slate-200 bg-white object-cover flex-shrink-0"
+                            onError={(event) => {
+                              event.currentTarget.src = DEFAULT_PROFILE_IMAGE_URL
+                              event.currentTarget.onerror = null
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-700 truncate">{item.label}</div>
+                            {item.email ? <div className="text-slate-500 truncate">{item.email}</div> : null}
+                          </div>
+                        </div>
                         {partnerIncludeComments && item.comment ? <div className="mt-1 text-slate-600">Comment: {item.comment}</div> : null}
                       </div>
                     ))}
@@ -4318,6 +4799,49 @@ export default function AdminPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {partnerGraphExpanded ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4"
+          onClick={() => setPartnerGraphExpanded(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded partner connection graph"
+        >
+          <div
+            className="w-full max-w-7xl rounded-card border border-slate-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <div>
+                <div className="text-lg font-heading text-duke-900">Connection Graph (Expanded)</div>
+                <div className="text-xs text-slate-500">Drag to rotate, scroll to zoom, click a node for details.</div>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setPartnerGraphExpanded(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <PartnerNetwork3D
+                graph={partnerConnectionGraph}
+                onNodeSelect={setSelectedGraphUserId}
+                canvasClassName="h-[78vh] w-full rounded border border-slate-100 bg-slate-50"
+              />
+              {(partnerConnectionGraph.hiddenNodes > 0 || partnerConnectionGraph.hiddenEdges > 0) ? (
+                <div className="mt-2 text-xs text-slate-500">
+                  Showing top {partnerConnectionGraph.nodes.length} connected students.
+                  {partnerConnectionGraph.hiddenNodes > 0 ? ` Hidden nodes: ${partnerConnectionGraph.hiddenNodes}.` : ''}
+                  {partnerConnectionGraph.hiddenEdges > 0 ? ` Hidden edges: ${partnerConnectionGraph.hiddenEdges}.` : ''}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

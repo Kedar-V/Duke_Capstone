@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { firstLoginRequestOtp, firstLoginVerifyOtp, login } from '../api'
 import { setAuth } from '../auth'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
+import { getCurrentTheme, toggleTheme } from '../theme'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -16,6 +17,11 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [theme, setTheme] = useState('light')
+
+  useEffect(() => {
+    setTheme(getCurrentTheme())
+  }, [])
 
   async function onSubmit(e) {
     e.preventDefault()
@@ -50,7 +56,17 @@ export default function LoginPage() {
       } else if (message.includes('First login setup required')) {
         setMode('setup')
         setPassword('')
-        setError('First login setup required. Request OTP and set your password.')
+        try {
+          await firstLoginRequestOtp({ email })
+          setInfo('We detected this is your first login. OTP has been sent to your email.')
+        } catch (otpErr) {
+          const otpMessage = String(otpErr?.message || '')
+          if (otpMessage.includes('User not found')) {
+            setError('Account not found. Please check your email address and try again.')
+          } else {
+            setError('First login detected. We could not send OTP automatically, please try again in a moment.')
+          }
+        }
       } else if (message.includes('Invalid or expired OTP')) {
         setError('Invalid OTP. Use 0000 in this environment and try again.')
       } else if (message.includes('Password must be at least 8 characters')) {
@@ -85,10 +101,37 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-md mx-auto px-4 py-16">
+        <div className="flex justify-end mb-4">
+          <button
+            type="button"
+            className="h-10 w-10 rounded-full border border-slate-200 bg-white text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-colors"
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => setTheme(toggleTheme())}
+          >
+            {theme === 'dark' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M12 2v2"/>
+                <path d="M12 20v2"/>
+                <path d="m4.93 4.93 1.41 1.41"/>
+                <path d="m17.66 17.66 1.41 1.41"/>
+                <path d="M2 12h2"/>
+                <path d="M20 12h2"/>
+                <path d="m6.34 17.66-1.41 1.41"/>
+                <path d="m19.07 4.93-1.41 1.41"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/>
+              </svg>
+            )}
+          </button>
+        </div>
         <div className="flex justify-center mb-6">
           <button
             type="button"
-            className="inline-flex"
+            className="inline-flex mids-logo-surface"
             aria-label="Go to projects"
             onClick={() => navigate('/projects')}
           >
@@ -217,20 +260,6 @@ export default function LoginPage() {
                 }}
               >
                 Back to normal sign in
-              </button>
-            ) : null}
-
-            {mode !== 'setup' ? (
-              <button
-                type="button"
-                className="btn-secondary w-full"
-                onClick={() => {
-                  setError('')
-                  setInfo('')
-                  setMode('setup')
-                }}
-              >
-                First login? Verify with OTP
               </button>
             ) : null}
 
