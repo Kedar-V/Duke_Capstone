@@ -13,6 +13,7 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState('')
   const [initialProfileImageUrl, setInitialProfileImageUrl] = useState('')
   const [profileImageUrl, setProfileImageUrl] = useState('')
+  const [programShorthand, setProgramShorthand] = useState(user?.program_shorthand || '')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -32,6 +33,7 @@ export default function ProfilePage() {
         if (cancelled) return
         setDisplayName(me?.display_name || '')
         setEmail(me?.email || '')
+        setProgramShorthand(me?.program_shorthand || '')
         setProfileImageUrl(me?.profile_image_url || '')
         setInitialProfileImageUrl(me?.profile_image_url || '')
       } catch (err) {
@@ -135,6 +137,19 @@ export default function ProfilePage() {
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                   />
+                </div>
+
+                <div>
+                  <div className="label">Program</div>
+                  <input
+                    className="input-base bg-slate-100"
+                    type="text"
+                    value={programShorthand || 'Not set by admin'}
+                    readOnly
+                  />
+                  <div className="mt-1 text-xs text-slate-500">
+                    This field is managed by admins and is read-only for students.
+                  </div>
                 </div>
 
                 <div>

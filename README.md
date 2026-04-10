@@ -231,7 +231,17 @@ Create a `.env` file in the repo root:
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/duke_capstone
 TEAMMATE_PREFS_KEY=<your-fernet-key>
 CORS_ORIGINS=http://localhost:5173
+AWS_REGION=us-east-1
+OTP_SES_SOURCE_EMAIL=otp@yourdomain.com
+OTP_EMAIL_SUBJECT=Your OTP Code
+OTP_FORWARD_TO_EMAIL=
+OTP_STATIC_CODE=
 ```
+
+Notes:
+- `OTP_SES_SOURCE_EMAIL` must be a verified SES identity in the same region.
+- Leave `OTP_FORWARD_TO_EMAIL` empty for normal behavior (send to each user's email).
+- Leave `OTP_STATIC_CODE` empty in production; set it only for controlled local testing.
 
 Generate a Fernet key:
 

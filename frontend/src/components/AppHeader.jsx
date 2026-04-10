@@ -81,13 +81,7 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
           className="h-10 w-10 rounded-full bg-duke-900 text-white flex items-center justify-center font-semibold border-2 border-transparent hover:border-blue-200 transition-colors"
           aria-label={user ? 'Account menu' : 'Sign in'}
           title={user ? 'Account menu' : 'Sign in'}
-          onClick={() => {
-            if (!user) {
-              navigate('/login')
-              return
-            }
-            setAccountOpen((v) => !v)
-          }}
+          onClick={() => setAccountOpen((v) => !v)}
         >
           {user && !accountAvatarFailed ? (
             <img
@@ -110,22 +104,50 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
             initialsForPerson({ displayName: user?.display_name, email: user?.email })
           )}
         </button>
-        {accountOpen && user ? (
-          <div className="absolute right-0 top-full mt-2 w-44 rounded-card border border-slate-200 bg-white shadow-lg p-2 z-50">
-            <button
-              type="button"
-              className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
-              onClick={onOpenProfile}
-            >
-              Profile
-            </button>
-            <button
-              type="button"
-              className="w-full text-left px-3 py-2 rounded-card text-sm text-red-700 hover:bg-red-50"
-              onClick={onSignOut}
-            >
-              Sign out
-            </button>
+        {accountOpen ? (
+          <div className="absolute right-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-card border border-slate-200 bg-white shadow-lg p-2 z-50">
+            {user ? (
+              <>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
+                  onClick={onOpenProfile}
+                >
+                  Profile
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 rounded-card text-sm text-red-700 hover:bg-red-50"
+                  onClick={onSignOut}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100"
+                onClick={() => {
+                  setAccountOpen(false)
+                  navigate('/login')
+                }}
+              >
+                Sign in
+              </button>
+            )}
+            <div className="my-1 border-t border-slate-200" />
+            <div className="px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+              Made with ❤️ by{' '}
+              <a
+                href="https://diwaspuri.com"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-slate-600 hover:text-slate-800 hover:underline"
+              >
+                Diwas
+              </a>{' '}
+              and Kedar MIDS'27
+            </div>
           </div>
         ) : null}
       </div>

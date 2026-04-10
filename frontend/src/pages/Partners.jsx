@@ -107,6 +107,38 @@ export default function PartnersPage() {
     [avoidIds, studentsById]
   )
 
+  function shuffleClassmates() {
+    if (visibleStudents.length < 2) return
+
+    const visibleIdSet = new Set(visibleStudents.map((student) => student.id))
+    const selectedIdSet = new Set([...wantIds, ...avoidIds])
+
+    setStudents((prev) => {
+      const toShuffle = prev.filter(
+        (student) => visibleIdSet.has(student.id) && !selectedIdSet.has(student.id)
+      )
+      if (toShuffle.length < 2) return prev
+
+      const shuffled = [...toShuffle]
+      for (let i = shuffled.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1))
+        const temp = shuffled[i]
+        shuffled[i] = shuffled[j]
+        shuffled[j] = temp
+      }
+
+      let cursor = 0
+      return prev.map((student) => {
+        if (visibleIdSet.has(student.id) && !selectedIdSet.has(student.id)) {
+          const next = shuffled[cursor]
+          cursor += 1
+          return next
+        }
+        return student
+      })
+    })
+  }
+
   function setPreference(studentId, target) {
     const inWant = wantIds.includes(studentId)
     const inAvoid = avoidIds.includes(studentId)
@@ -223,7 +255,17 @@ export default function PartnersPage() {
                 <div className="text-lg font-heading text-duke-900">Classmates</div>
                 <div className="text-sm text-slate-500">Click Want or Avoid. Selecting one clears the other.</div>
               </div>
-              <div className="text-xs text-slate-500">{visibleStudents.length} shown</div>
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-slate-500">{visibleStudents.length} shown</div>
+                <button
+                  type="button"
+                  className="btn-secondary h-8 px-3 text-xs"
+                  onClick={shuffleClassmates}
+                  disabled={visibleStudents.length < 2}
+                >
+                  Shuffle
+                </button>
+              </div>
             </div>
             <div className="mt-3">
               <input

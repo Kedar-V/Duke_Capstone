@@ -435,8 +435,23 @@ def _faculty_profile_map(db: Session, user_ids: list[int]) -> dict[int, FacultyP
     return {row.user_id: row for row in rows}
 
 
+def _student_program_map(db: Session, user_ids: list[int]) -> dict[int, str]:
+    if not user_ids:
+        return {}
+    rows = db.execute(
+        select(Student.user_id, Student.program).where(Student.user_id.in_(user_ids))
+    ).all()
+    return {
+        int(user_id): str(program).strip()
+        for user_id, program in rows
+        if user_id is not None and program is not None and str(program).strip()
+    }
+
+
 def _serialize_admin_user(
-    row: User, faculty_profile: Optional[FacultyProfile] = None
+    row: User,
+    faculty_profile: Optional[FacultyProfile] = None,
+    program_shorthand: Optional[str] = None,
 ) -> AdminUserOut:
     return AdminUserOut(
         id=row.id,
@@ -445,12 +460,18 @@ def _serialize_admin_user(
         profile_image_url=row.profile_image_url,
         role=row.role,
         cohort_id=row.cohort_id,
+        program_shorthand=(program_shorthand or None),
         faculty_department=faculty_profile.department if faculty_profile else None,
         faculty_title=faculty_profile.title if faculty_profile else None,
     )
 
 
-def _sync_student_profile_row(db: Session, user: User) -> None:
+def _sync_student_profile_row(
+    db: Session,
+    user: User,
+    *,
+    program_shorthand: Optional[str] = None,
+) -> None:
     _ensure_role_profile_schema(db)
     if user.role != "student":
         return
@@ -477,13 +498,17 @@ def _sync_student_profile_row(db: Session, user: User) -> None:
         student.email = user.email
         student.full_name = full_name
         student.cohort_id = user.cohort_id
+        if program_shorthand is not None:
+            student.program = program_shorthand.strip() or None
     else:
         db.add(
             Student(
                 user_id=user.id,
                 full_name=full_name,
                 email=user.email,
-                program=None,
+                program=(program_shorthand.strip() or None)
+                if program_shorthand is not None
+                else None,
                 cohort_id=user.cohort_id,
             )
         )
@@ -1610,7 +1635,13 @@ async def upload_students_csv(
             row.get("full_name") or row.get("Full_Name") or row.get("name") or ""
         ).strip()
         email = (row.get("email") or row.get("Email") or "").strip().lower()
-        program = (row.get("program") or row.get("Program") or "").strip()
+        program = (
+            row.get("program")
+            or row.get("Program")
+            or row.get("program_shorthand")
+            or row.get("Program_Shorthand")
+            or ""
+        ).strip()
 
         if not full_name or not email:
             skipped_rows += 1
@@ -1749,7 +1780,11 @@ def list_users(
         .all()
     )
     faculty_map = _faculty_profile_map(db, [row.id for row in rows])
-    return [_serialize_admin_user(row, faculty_map.get(row.id)) for row in rows]
+    program_map = _student_program_map(db, [row.id for row in rows])
+    return [
+        _serialize_admin_user(row, faculty_map.get(row.id), program_map.get(row.id))
+        for row in rows
+    ]
 
 
 @router.post("/users", response_model=AdminUserOut)
@@ -1793,7 +1828,7 @@ def create_user(
         faculty_department=payload.faculty_department,
         faculty_title=payload.faculty_title,
     )
-    _sync_student_profile_row(db, user)
+    _sync_student_profile_row(db, user, program_shorthand=payload.program_shorthand)
     db.commit()
     db.refresh(user)
 
@@ -1812,6 +1847,7 @@ def create_user(
         db.execute(select(FacultyProfile).where(FacultyProfile.user_id == user.id))
         .scalars()
         .first(),
+        db.execute(select(Student.program).where(Student.user_id == user.id)).scalar_one_or_none(),
     )
 
 
@@ -1861,7 +1897,7 @@ def update_user(
         faculty_department=payload.faculty_department,
         faculty_title=payload.faculty_title,
     )
-    _sync_student_profile_row(db, user)
+    _sync_student_profile_row(db, user, program_shorthand=payload.program_shorthand)
     db.commit()
     db.refresh(user)
 
@@ -1880,6 +1916,7 @@ def update_user(
         db.execute(select(FacultyProfile).where(FacultyProfile.user_id == user.id))
         .scalars()
         .first(),
+        db.execute(select(Student.program).where(Student.user_id == user.id)).scalar_one_or_none(),
     )
 
 

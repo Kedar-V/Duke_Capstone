@@ -64,7 +64,16 @@ def _resolve_profile_image_url(user: User) -> str:
     return _default_profile_image_url(display_name=user.display_name, email=user.email)
 
 
-def _user_out(user: User) -> UserOut:
+def _user_program_shorthand(db: Session, user: User) -> str | None:
+    value = db.execute(
+        select(Student.program).where(Student.user_id == user.id)
+    ).scalar_one_or_none()
+    if isinstance(value, str):
+        value = value.strip()
+    return value or None
+
+
+def _user_out(user: User, db: Session) -> UserOut:
     return UserOut(
         id=user.id,
         email=user.email,
@@ -72,6 +81,7 @@ def _user_out(user: User) -> UserOut:
         profile_image_url=_resolve_profile_image_url(user),
         role=user.role,
         cohort_id=user.cohort_id,
+        program_shorthand=_user_program_shorthand(db, user),
     )
 
 
@@ -125,12 +135,15 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token(user=user)
-    return AuthOut(access_token=token, user=_user_out(user))
+    return AuthOut(access_token=token, user=_user_out(user, db))
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
-    return _user_out(current_user)
+def me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return _user_out(current_user, db)
 
 
 @router.put("/me", response_model=UserOut)
@@ -165,7 +178,7 @@ def update_me(
     db.commit()
     db.refresh(current_user)
 
-    return _user_out(current_user)
+    return _user_out(current_user, db)
 
 
 @router.post("/first-login/request-otp", response_model=MessageOut)
@@ -179,7 +192,7 @@ def first_login_request_otp(payload: FirstLoginOtpRequestIn, db: Session = Depen
         raise HTTPException(status_code=400, detail="Password already configured")
 
     request_first_login_otp(email)
-    return MessageOut(message="OTP sent. Use code 0000 in the current environment.")
+    return MessageOut(message="OTP sent. Check your email for the verification code.")
 
 
 @router.post("/first-login/verify-otp", response_model=AuthOut)
@@ -208,4 +221,4 @@ def first_login_verify_otp(payload: FirstLoginOtpVerifyIn, db: Session = Depends
     db.refresh(user)
 
     token = create_access_token(user=user)
-    return AuthOut(access_token=token, user=_user_out(user))
+    return AuthOut(access_token=token, user=_user_out(user, db))

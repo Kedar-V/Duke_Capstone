@@ -419,6 +419,7 @@ export default function AdminPage() {
   const [userDisplayName, setUserDisplayName] = useState('')
   const [userProfileImageUrl, setUserProfileImageUrl] = useState('')
   const [userRole, setUserRole] = useState('student')
+  const [userProgramShorthand, setUserProgramShorthand] = useState('')
   const [userFacultyDepartment, setUserFacultyDepartment] = useState('')
   const [userFacultyTitle, setUserFacultyTitle] = useState('')
   const [userCohortId, setUserCohortId] = useState('')
@@ -1471,6 +1472,7 @@ export default function AdminPage() {
     setUserDisplayName(item.display_name || '')
     setUserProfileImageUrl(item.profile_image_url || '')
     setUserRole(item.role || 'student')
+    setUserProgramShorthand(item.program_shorthand || '')
     setUserFacultyDepartment(item.faculty_department || '')
     setUserFacultyTitle(item.faculty_title || '')
     setUserCohortId(item.cohort_id ? String(item.cohort_id) : '')
@@ -1484,6 +1486,7 @@ export default function AdminPage() {
     setUserDisplayName('')
     setUserProfileImageUrl('')
     setUserRole('student')
+    setUserProgramShorthand('')
     setUserFacultyDepartment('')
     setUserFacultyTitle('')
     setUserCohortId('')
@@ -1584,6 +1587,7 @@ export default function AdminPage() {
         profile_image_url: userProfileImageUrl.trim() || null,
         role: userRole,
         cohort_id: userCohortId ? Number(userCohortId) : null,
+        program_shorthand: userProgramShorthand.trim() || null,
         faculty_department: userRole === 'faculty' ? (userFacultyDepartment.trim() || null) : null,
         faculty_title: userRole === 'faculty' ? (userFacultyTitle.trim() || null) : null,
       })
@@ -1616,6 +1620,7 @@ export default function AdminPage() {
         profile_image_url: userProfileImageUrl.trim() || null,
         role: userRole,
         cohort_id: userCohortId ? Number(userCohortId) : null,
+        program_shorthand: userProgramShorthand.trim() || null,
         faculty_department: userRole === 'faculty' ? (userFacultyDepartment.trim() || null) : null,
         faculty_title: userRole === 'faculty' ? (userFacultyTitle.trim() || null) : null,
       })
@@ -4150,6 +4155,9 @@ export default function AdminPage() {
                           </div>
                           <div className="text-xs text-slate-500">{item.email}</div>
                           <div className="text-xs text-slate-400">Role: {item.role || 'student'}</div>
+                          {item.program_shorthand ? (
+                            <div className="text-xs text-slate-400">Program shorthand: {item.program_shorthand}</div>
+                          ) : null}
                           {item.role === 'faculty' && (item.faculty_title || item.faculty_department) ? (
                             <div className="text-xs text-slate-400">
                               Faculty: {[item.faculty_title, item.faculty_department].filter(Boolean).join(' · ')}
@@ -4273,6 +4281,15 @@ export default function AdminPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <div className="label">Program shorthand</div>
+                  <input
+                    className="input-base"
+                    value={userProgramShorthand}
+                    onChange={(e) => setUserProgramShorthand(e.target.value)}
+                    placeholder="MIDS, STAT, ECON, etc."
+                  />
                 </div>
                 {userRole === 'faculty' ? (
                   <>
@@ -4422,11 +4439,22 @@ export default function AdminPage() {
               <form className="mt-4 space-y-3" onSubmit={editingCohortId ? handleUpdateCohort : handleCreateCohort}>
                 <div>
                   <div className="label">Name</div>
-                  <input className="input-base" value={cohortName} onChange={(e) => setCohortName(e.target.value)} required />
+                  <input
+                    className="input-base"
+                    value={cohortName}
+                    onChange={(e) => setCohortName(e.target.value)}
+                    placeholder="CAP2027"
+                    required
+                  />
                 </div>
                 <div>
-                  <div className="label">Program</div>
-                  <input className="input-base" value={cohortProgram} onChange={(e) => setCohortProgram(e.target.value)} />
+                  <div className="label">Program (optional)</div>
+                  <input
+                    className="input-base"
+                    value={cohortProgram}
+                    onChange={(e) => setCohortProgram(e.target.value)}
+                    placeholder="Cross-program or school label (optional)"
+                  />
                 </div>
                 <div>
                   <div className="label">Year</div>
@@ -4449,7 +4477,7 @@ export default function AdminPage() {
               <div className="mt-6 pt-6 border-t border-slate-200">
                 <div className="text-lg font-heading text-duke-900">Upload students CSV</div>
                 <p className="muted mt-1 text-sm">
-                  Upload cohort roster with headers: <code>full_name,email,program</code>.
+                  Upload cohort roster with headers: <code>full_name,email,program</code> (or <code>program_shorthand</code>).
                 </p>
 
                 <form className="mt-4 space-y-3" onSubmit={handleUploadStudentsCsv}>
@@ -4472,14 +4500,28 @@ export default function AdminPage() {
 
                   <div>
                     <div className="label">CSV file</div>
-                    <input
-                      key={uploadInputKey}
-                      className="input-base h-11 py-2"
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                      required
-                    />
+                    <div className="mt-1 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                      <input
+                        key={uploadInputKey}
+                        id={`upload-file-${uploadInputKey}`}
+                        className="sr-only"
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                        required
+                      />
+                      <div className="flex items-center gap-3">
+                        <label
+                          htmlFor={`upload-file-${uploadInputKey}`}
+                          className="inline-flex h-10 cursor-pointer items-center rounded-lg bg-duke-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-duke-800"
+                        >
+                          Choose CSV
+                        </label>
+                        <div className="min-w-0 truncate text-sm text-slate-600">
+                          {uploadFile ? uploadFile.name : 'No file selected'}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">

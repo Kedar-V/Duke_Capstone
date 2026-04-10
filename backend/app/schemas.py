@@ -104,6 +104,7 @@ class UserOut(BaseModel):
     profile_image_url: Optional[str] = None
     role: Optional[str] = None
     cohort_id: Optional[int] = None
+    program_shorthand: Optional[str] = None
 
 
 class UserProfileUpdateIn(BaseModel):
@@ -296,6 +297,7 @@ class AdminUserIn(BaseModel):
     profile_image_url: Optional[str] = None
     role: str = "student"
     cohort_id: Optional[int] = None
+    program_shorthand: Optional[str] = None
     faculty_department: Optional[str] = None
     faculty_title: Optional[str] = None
 
@@ -307,6 +309,7 @@ class AdminUserUpdateIn(BaseModel):
     profile_image_url: Optional[str] = None
     role: str = "student"
     cohort_id: Optional[int] = None
+    program_shorthand: Optional[str] = None
     faculty_department: Optional[str] = None
     faculty_title: Optional[str] = None
 
@@ -318,6 +321,7 @@ class AdminUserOut(BaseModel):
     profile_image_url: Optional[str] = None
     role: Optional[str] = None
     cohort_id: Optional[int] = None
+    program_shorthand: Optional[str] = None
     faculty_department: Optional[str] = None
     faculty_title: Optional[str] = None
 
