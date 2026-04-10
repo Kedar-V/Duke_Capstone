@@ -7,13 +7,14 @@ import { getToken } from '../auth'
 export default function CartWidget() {
   const location = useLocation()
   const [cartCount, setCartCount] = useState(0)
-
-  // Mobile-only floating cart; hide for logged-out users and on login.
-  if (!getToken() || location.pathname === '/login') {
-    return null
-  }
+  const isVisible = Boolean(getToken()) && location.pathname !== '/login'
 
   useEffect(() => {
+    if (!isVisible) {
+      setCartCount(0)
+      return undefined
+    }
+
     let cancelled = false
 
     async function load() {
@@ -37,7 +38,12 @@ export default function CartWidget() {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [isVisible])
+
+  // Mobile-only floating cart; hide for logged-out users and on login.
+  if (!isVisible) {
+    return null
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-40 md:hidden">
