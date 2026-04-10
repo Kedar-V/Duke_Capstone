@@ -124,27 +124,13 @@ export default function LoginPage() {
     }
   }
 
-  async function onStartResetFlow() {
+  function onStartResetFlow() {
     setError('')
-    setInfo('')
+    setInfo('Enter your account email, then click Request OTP.')
     setMode('reset')
+    setEmail('')
     setOtp('')
     setNewPassword('')
-
-    setOtpSubmitting(true)
-    try {
-      await passwordResetRequestOtp({ email })
-      setInfo('OTP requested. Check your email for the verification code.')
-    } catch (err) {
-      const message = String(err?.message || '')
-      if (message.includes('Password is not configured yet')) {
-        setError('This account has no password yet. Use first login setup.')
-      } else {
-        setError(message || 'Failed to request OTP')
-      }
-    } finally {
-      setOtpSubmitting(false)
-    }
   }
 
   return (
