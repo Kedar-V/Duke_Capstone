@@ -22,7 +22,8 @@ export default function LoginPage() {
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [authSubmitting, setAuthSubmitting] = useState(false)
+  const [otpSubmitting, setOtpSubmitting] = useState(false)
   const [theme, setTheme] = useState('light')
 
   useEffect(() => {
@@ -33,7 +34,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setInfo('')
-    setSubmitting(true)
+    setAuthSubmitting(true)
     try {
       let auth
 
@@ -93,14 +94,14 @@ export default function LoginPage() {
         setError(message || 'Login failed')
       }
     } finally {
-      setSubmitting(false)
+      setAuthSubmitting(false)
     }
   }
 
   async function onRequestOtp() {
     setError('')
     setInfo('')
-    setSubmitting(true)
+    setOtpSubmitting(true)
     try {
       if (mode === 'reset') {
         await passwordResetRequestOtp({ email })
@@ -119,7 +120,30 @@ export default function LoginPage() {
         setError(message || 'Failed to request OTP')
       }
     } finally {
-      setSubmitting(false)
+      setOtpSubmitting(false)
+    }
+  }
+
+  async function onStartResetFlow() {
+    setError('')
+    setInfo('')
+    setMode('reset')
+    setOtp('')
+    setNewPassword('')
+
+    setOtpSubmitting(true)
+    try {
+      await passwordResetRequestOtp({ email })
+      setInfo('OTP requested. Check your email for the verification code.')
+    } catch (err) {
+      const message = String(err?.message || '')
+      if (message.includes('Password is not configured yet')) {
+        setError('This account has no password yet. Use first login setup.')
+      } else {
+        setError(message || 'Failed to request OTP')
+      }
+    } finally {
+      setOtpSubmitting(false)
     }
   }
 
@@ -221,9 +245,9 @@ export default function LoginPage() {
                     type="button"
                     className="btn-secondary"
                     onClick={onRequestOtp}
-                    disabled={submitting}
+                    disabled={otpSubmitting}
                   >
-                    Request OTP
+                    {otpSubmitting ? 'Requesting…' : 'Request OTP'}
                   </button>
                 </div>
 
@@ -266,8 +290,8 @@ export default function LoginPage() {
               </div>
             ) : null}
 
-            <button type="submit" className="btn-primary w-full" disabled={submitting}>
-              {submitting
+            <button type="submit" className="btn-primary w-full" disabled={authSubmitting}>
+              {authSubmitting
                 ? mode === 'setup' || mode === 'reset'
                     ? 'Verifying…'
                     : 'Signing in…'
@@ -294,13 +318,10 @@ export default function LoginPage() {
               <button
                 type="button"
                 className="btn-secondary w-full"
-                onClick={() => {
-                  setError('')
-                  setInfo('')
-                  setMode('reset')
-                }}
+                onClick={onStartResetFlow}
+                disabled={otpSubmitting}
               >
-                Forgot password? Reset with OTP
+                {otpSubmitting ? 'Preparing reset…' : 'Forgot password? Reset with OTP'}
               </button>
             ) : null}
 

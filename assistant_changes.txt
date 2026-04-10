@@ -1,9 +1,6 @@
 Change log (assistant-made edits)
 
 2026-03-17
-- Updated docker-compose.yml: added local Postgres service (db), a named volume, and api depends_on db.
-- Updated backend/app/db.py: removed hardcoded RDS DATABASE_URL fallback; now requires env DATABASE_URL.
-- Updated .env: set DATABASE_URL to local Docker Postgres service and commented the old RDS URL.
 - Updated backend/entrypoint.sh: converted line endings to LF to fix container startup.
 - Updated seed.sql: replaced legacy seed data with client_intake_forms-aligned seed rows plus dev user, profile, and students.
 - Updated backend/app/routers/catalog.py: removed runtime DDL helpers for ratings/teammate prefs and cleaned unused imports.
@@ -56,3 +53,19 @@ Change log (assistant-made edits)
 - Renamed menu label from "Teammate Choices" to "Partners" and improved desktop spacing between logo and nav.
 - Fixed Partners header wrapper to match standardized page menu container/layout.
 - Admin page fixes: preserved success/error flashes after actions, corrected file input reset behavior, switched project list key to stable `project_id`, and added tab/tablist/tabpanel accessibility semantics.
+
+2026-04-10
+- Integrated AWS SES delivery into OTP flow in `backend/app/otp.py` using `boto3` `send_email` (text + HTML templates), with default random 6-digit OTP and optional static override for testing.
+- Added password reset OTP request/verify support in backend auth routes and frontend login flow (`backend/app/routers/auth.py`, `frontend/src/api.js`, `frontend/src/pages/Login.jsx`).
+- Added SES/OTP runtime config wiring in `docker-compose.yml`, `.env.example`, and `README.md`.
+- Added `boto3` dependency in `backend/requirements.txt`.
+- Troubleshot SES send failures:
+	- Confirmed sender identity requirements and region alignment (`us-east-1`).
+	- Identified sandbox behavior causing `MessageRejected` for unverified recipients.
+	- Validated direct SES sending from CLI after identity and recipient constraints were addressed.
+- Improved CI deploy reliability by adding Docker disk cleanup/diagnostics in `.github/workflows/deploy.yml` to avoid no-space-left build failures.
+- Fixed deploy-blocking `.env` parsing bug by quoting subject with spaces:
+	- `OTP_EMAIL_SUBJECT="Your OTP Code from Duke MIDS"`
+	- This resolved `./.env: line 16: OTP: command not found` during workflow `source ./.env`.
+- Completed SSL setup for deployment (HTTPS enabled and certificate installation/configuration finalized).
+- Net result: OTP emails are now sent through SES from app flow, with deployment unblocked by env parsing.
