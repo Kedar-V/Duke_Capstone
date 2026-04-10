@@ -97,7 +97,21 @@ jobs:
               exit 1
             fi
 
+            echo "==> Disk usage before cleanup"
+            df -h
+            docker system df || true
+
             docker-compose down
+
+            echo "==> Pruning old Docker data to free disk (safe: no volumes)"
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker system prune -af || true
+
+            echo "==> Disk usage after cleanup"
+            df -h
+            docker system df || true
+
             docker-compose build
 
             # ── Run only NEW alembic migrations (safe, incremental) ──
@@ -155,6 +169,10 @@ jobs:
               exit 1
             fi
 
+            echo "=== Disk usage ==="
+            df -h || true
+            docker system df || true
+
             echo "=== Docker status ==="
             docker-compose ps || true
 
@@ -209,7 +227,21 @@ jobs:
               RUN_DB_SEEDS_EFFECTIVE=true
             fi
 
+            echo "==> Disk usage before cleanup"
+            df -h
+            docker system df || true
+
             docker-compose down
+
+            echo "==> Pruning old Docker data to free disk (safe: no volumes)"
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker system prune -af || true
+
+            echo "==> Disk usage after cleanup"
+            df -h
+            docker system df || true
+
             docker-compose build
 
             REPO_ROOT="/home/ec2-user/app"
