@@ -126,6 +126,12 @@
     @apply inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100/80 rounded-full px-3 py-1 border border-slate-200/60;
   }
 
+  html.dark .project-card-duration {
+    background-color: #1e3a8a;
+    border-color: #3b82f6;
+    color: #dbeafe;
+  }
+
   .project-card-rating {
     @apply rounded-xl border border-slate-200/70 bg-slate-50/50 px-3 py-3;
   }
@@ -148,16 +154,22 @@
     @apply inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm hover:border-duke-700/20 hover:bg-slate-50 transition-colors;
   }
 
+  html.dark .project-meta-chip {
+    background-color: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+
   .project-card-tags {
     @apply flex flex-wrap gap-2;
   }
 
   .project-card-footer {
-    @apply pt-3 border-t border-slate-100 flex flex-col gap-3 md:flex-row md:items-center md:justify-between;
+    @apply pt-3 border-t border-slate-100 flex flex-row items-center justify-between gap-2;
   }
 
   .project-card-actions {
-    @apply flex-wrap;
+    @apply flex-nowrap;
   }
 
   .org-logo-frame {

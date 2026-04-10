@@ -192,15 +192,21 @@ function formatPublishedRelative(isoText) {
   return `Published ${days} day${days === 1 ? '' : 's'} ago`
 }
 
+function normalizeMidsLabel(value) {
+  const text = String(value || '')
+  return text.replace(/\bmids\b/gi, 'MIDS')
+}
+
 function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, isGuest = false, rankingsLocked = false }) {
   const descriptionRef = useRef(null)
   const [descriptionHeight, setDescriptionHeight] = useState(() => Math.ceil(PROJECT_CARD_DESC_LINE_HEIGHT))
   const isArchived = project.projectStatus === 'archived'
   const canAddToCart = !isGuest && !isArchived && !rankingsLocked && (inCart || rating > 0)
-  const headerMeta = project.cohort || (project.tags.length ? `${project.tags.length} tagged skills` : 'Open project')
+  const normalizedCohort = normalizeMidsLabel(project.cohort)
+  const headerMeta = normalizedCohort || (project.tags.length ? `${project.tags.length} tagged skills` : 'Open project')
   const metaChips = [
     project.domain ? `Focus: ${project.domain}` : null,
-    project.cohort ? `Cohort: ${project.cohort}` : null,
+    normalizedCohort ? `Cohort: ${normalizedCohort}` : null,
     project.tags.length ? `Skills: ${project.tags.length}` : null,
   ].filter(Boolean)
   const cartAnimClass =
@@ -267,7 +273,7 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
         <div className="flex items-start justify-between gap-3">
           <span className="pill">{project.domain || 'General'}</span>
           <div className="project-card-duration">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinelinejoin="round" className="text-slate-400"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             {headerMeta}
           </div>
         </div>
@@ -304,7 +310,7 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
         <div className="project-card-meta">
           {metaChips.map((chip) => (
             <span key={chip} className="project-meta-chip">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinelinejoin="round" className="text-duke-700/60"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-duke-700/60"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
               {chip}
             </span>
           ))}
@@ -320,14 +326,14 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
       </div>
 
       <div className="project-card-footer">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-500">
           <OrganizationLogo logoUrl={project.organizationLogoUrl} organization={project.organization} />
-          <span className="truncate max-w-[140px] font-medium text-slate-800" title={project.organization}>{project.organization}</span>
+          <span className="truncate font-medium text-slate-800" title={project.organization}>{project.organization}</span>
         </div>
-        <div className="flex items-center gap-2 project-card-actions">
+        <div className="project-card-actions flex shrink-0 items-center gap-1.5">
           <button
             type="button"
-            className="btn-secondary"
+            className="btn-secondary h-9 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm"
             onClick={(event) => {
               event.stopPropagation()
               onOpen()
@@ -353,16 +359,16 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
             }
             className={
               isGuest
-                ? 'btn-secondary flex items-center gap-1.5'
+                ? 'btn-secondary flex h-9 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm'
                 : isArchived
-                  ? 'btn-secondary opacity-60 cursor-not-allowed flex items-center gap-1.5'
+                  ? 'btn-secondary opacity-60 cursor-not-allowed flex h-9 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm'
                 : rankingsLocked
-                  ? 'btn-secondary opacity-60 cursor-not-allowed flex items-center gap-1.5'
+                  ? 'btn-secondary opacity-60 cursor-not-allowed flex h-9 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm'
                 : inCart
-                ? `btn-secondary flex items-center gap-1.5 !text-pink-700 !border-pink-200 !bg-pink-50 hover:!bg-pink-100 ${cartAnimClass}`
+                ? `btn-secondary flex h-9 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm !text-pink-700 !border-pink-200 !bg-pink-50 hover:!bg-pink-100 ${cartAnimClass}`
                 : canAddToCart
-                  ? `btn-primary flex items-center gap-1.5 ${cartAnimClass}`
-                  : 'btn-secondary opacity-60 cursor-not-allowed flex items-center gap-1.5'
+                  ? `btn-primary flex h-9 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm ${cartAnimClass}`
+                  : 'btn-secondary opacity-60 cursor-not-allowed flex h-9 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm'
             }
             onClick={(event) => {
               event.stopPropagation()
@@ -371,7 +377,7 @@ function ProjectCard({ project, inCart, onToggleCart, rating, onRate, onOpen, is
           >
             {isGuest ? (
                <>
-                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinelinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v7h-7"/><path d="M3 10 14 21"/></svg>
+                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v7h-7"/><path d="M3 10 14 21"/></svg>
                  Sign in
                </>
             ) : rankingsLocked ? (
@@ -754,7 +760,7 @@ export default function CatalogPage() {
                       <option value="">All cohorts</option>
                       {filters.cohorts.map((cohort) => (
                         <option key={cohort} value={cohort}>
-                          {cohort}
+                          {normalizeMidsLabel(cohort)}
                         </option>
                       ))}
                     </select>

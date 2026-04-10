@@ -45,7 +45,7 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
     navigate('/profile')
   }
 
-  const AvatarControls = ({ showThemeToggle = true } = {}) => (
+  const AvatarControls = ({ showThemeToggle = true, showCart = true } = {}) => (
     <>
       {showThemeToggle ? (
         <button
@@ -74,7 +74,7 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
           )}
         </button>
       ) : null}
-      {user ? <CartNavIcon /> : null}
+      {user && showCart ? <CartNavIcon /> : null}
       <div className="relative">
         <button
           type="button"
@@ -184,35 +184,6 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
                         {label}
                       </button>
                     ))}
-                    <div className="my-1 border-t border-slate-200" />
-                    <div className="px-3 py-2 rounded-card text-sm text-slate-700 hover:bg-slate-100 flex items-center justify-between">
-                      <span className="font-medium">Theme</span>
-                      <button
-                        type="button"
-                        className="h-8 min-w-[2rem] px-2 rounded-full border border-slate-200 bg-white text-slate-700 text-xs font-semibold flex items-center justify-center gap-1"
-                        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                        onClick={() => setTheme(toggleTheme())}
-                      >
-                        {theme === 'dark' ? (
-                          <>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <circle cx="12" cy="12" r="4"/>
-                              <path d="M12 2v2"/>
-                              <path d="M12 20v2"/>
-                            </svg>
-                            <span>Light</span>
-                          </>
-                        ) : (
-                          <>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/>
-                            </svg>
-                            <span>Dark</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
                   </div>
                 </div>
               ) : null}
@@ -250,8 +221,8 @@ export default function AppHeader({ onSearch, searchText, setSearchText, showSea
               })}
             </div>
           </div>
-          <div className="flex items-center gap-3 md:hidden">
-            <AvatarControls showThemeToggle={false} />
+          <div className="flex items-center gap-2 md:hidden">
+            <AvatarControls showThemeToggle showCart={false} />
           </div>
         </div>
 
