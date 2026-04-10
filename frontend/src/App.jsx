@@ -8,6 +8,7 @@ import ProfilePage from './pages/Profile'
 import ProjectDisplayPage from './pages/ProjectDisplay'
 import AdminPage from './pages/Admin'
 import CartDrawer from './components/CartDrawer'
+import CartWidget from './components/CartWidget'
 import { getToken, getUser, onAuthChanged } from './auth'
 import { THEME_STORAGE_KEY, applyTheme, initTheme, resolveInitialTheme } from './theme'
 
@@ -65,6 +66,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
+      <CartWidget />
       <CartDrawer />
     </>
   )

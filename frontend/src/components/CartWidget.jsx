@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { getCart } from '../api'
 import { subscribe } from '../events'
-import { getToken, getUser } from '../auth'
+import { getToken } from '../auth'
 
 export default function CartWidget() {
-  const navigate = useNavigate()
   const location = useLocation()
   const [cartCount, setCartCount] = useState(0)
 
-  // Don't show the widget on the login page or the rankings page itself (since you're already there)
-  if (!getToken() || location.pathname === '/login' || location.pathname === '/rankings') {
+  // Mobile-only floating cart; hide for logged-out users and on login.
+  if (!getToken() || location.pathname === '/login') {
     return null
   }
 
@@ -41,23 +40,27 @@ export default function CartWidget() {
   }, [])
 
   return (
-    <div className="fixed bottom-6 right-6 z-40">
+    <div className="fixed bottom-4 right-4 z-40 md:hidden">
       <button
         type="button"
-        aria-label="View selected projects menu"
-        className="group flex items-center justify-center relative w-16 h-16 rounded-full bg-duke-900 border-2 border-white text-white shadow-xl hover:scale-105 hover:shadow-2xl hover:bg-duke-800 transition-all duration-300"
-        onClick={() => navigate('/rankings')}
+        aria-label="Open selected projects drawer"
+        className="group relative flex h-10 w-10 items-center justify-center rounded-full bg-duke-900 text-white shadow-md ring-1 ring-white/80 transition-all duration-200 hover:scale-[1.03] hover:bg-duke-800"
+        onClick={() => {
+          import('../events').then((m) => m.emit('toggle_cart_drawer'))
+        }}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 6h18"/>
-          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <path d="M16 10a4 4 0 0 1-8 0"/>
         </svg>
         
         {/* Badge */}
-        <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-pink-600 text-white text-xs font-bold shadow ring-2 ring-white transform group-hover:scale-110 transition-transform">
-          {cartCount}
-        </span>
+        {cartCount > 0 ? (
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-pink-600 px-1 text-[9px] font-semibold text-white shadow-sm ring-1 ring-white transition-transform group-hover:scale-105">
+            {cartCount}
+          </span>
+        ) : null}
       </button>
     </div>
   )
