@@ -135,6 +135,16 @@ class FirstLoginOtpVerifyIn(BaseModel):
     display_name: Optional[str] = None
 
 
+class PasswordResetOtpRequestIn(BaseModel):
+    email: str
+
+
+class PasswordResetOtpVerifyIn(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
+
 class MessageOut(BaseModel):
     message: str
 

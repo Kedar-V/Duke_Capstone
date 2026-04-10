@@ -14,9 +14,12 @@ from ..schemas import (
     FirstLoginOtpVerifyIn,
     LoginIn,
     MessageOut,
+    PasswordResetOtpRequestIn,
+    PasswordResetOtpVerifyIn,
     UserProfileUpdateIn,
     UserOut,
 )
+from ..otp import request_password_reset_otp, verify_password_reset_otp
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -222,3 +225,40 @@ def first_login_verify_otp(payload: FirstLoginOtpVerifyIn, db: Session = Depends
 
     token = create_access_token(user=user)
     return AuthOut(access_token=token, user=_user_out(user, db))
+
+
+@router.post("/password-reset/request-otp", response_model=MessageOut)
+def password_reset_request_otp(payload: PasswordResetOtpRequestIn, db: Session = Depends(get_db)):
+    email = (payload.email or "").strip().lower()
+    user = db.execute(select(User).where(User.email == email)).scalars().first()
+    if not user or user.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.password_hash:
+        raise HTTPException(status_code=400, detail="Password is not configured yet. Use first login setup.")
+
+    request_password_reset_otp(email)
+    return MessageOut(message="OTP sent. Check your email for the verification code.")
+
+
+@router.post("/password-reset/verify-otp", response_model=MessageOut)
+def password_reset_verify_otp(payload: PasswordResetOtpVerifyIn, db: Session = Depends(get_db)):
+    email = (payload.email or "").strip().lower()
+    user = db.execute(select(User).where(User.email == email)).scalars().first()
+    if not user or user.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.password_hash:
+        raise HTTPException(status_code=400, detail="Password is not configured yet. Use first login setup.")
+
+    if not verify_password_reset_otp(email, payload.otp):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    new_password = (payload.new_password or "").strip()
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    user.password_hash = hash_password(new_password)
+    db.commit()
+
+    return MessageOut(message="Password reset successful. You can now sign in with your new password.")

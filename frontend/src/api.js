@@ -122,6 +122,24 @@ export function firstLoginVerifyOtp({ email, otp, newPassword, displayName }) {
   })
 }
 
+export function passwordResetRequestOtp({ email }) {
+  return request('/api/auth/password-reset/request-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function passwordResetVerifyOtp({ email, otp, newPassword }) {
+  return request('/api/auth/password-reset/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      otp,
+      new_password: newPassword,
+    }),
+  })
+}
+
 export function getCart() {
   return request('/api/cart')
 }

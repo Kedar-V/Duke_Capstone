@@ -132,3 +132,49 @@ def verify_first_login_otp(email: str, otp: str) -> bool:
 
         _challenges.pop(normalized, None)
         return True
+
+
+def request_password_reset_otp(email: str) -> None:
+    normalized = (email or "").strip().lower()
+    if not normalized:
+        return
+
+    code = _provider.issue_code(normalized)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=_OTP_TTL_MINUTES)
+
+    with _lock:
+        _challenges[normalized] = OtpChallenge(
+            code=code,
+            expires_at=expires_at,
+            attempts_remaining=_MAX_ATTEMPTS,
+        )
+
+    _provider.deliver_code(normalized, code)
+
+
+def verify_password_reset_otp(email: str, otp: str) -> bool:
+    normalized = (email or "").strip().lower()
+    supplied = (otp or "").strip()
+
+    with _lock:
+        challenge = _challenges.get(normalized)
+        if not challenge:
+            return False
+
+        now = datetime.now(timezone.utc)
+        if now > challenge.expires_at:
+            _challenges.pop(normalized, None)
+            return False
+
+        if challenge.attempts_remaining <= 0:
+            _challenges.pop(normalized, None)
+            return False
+
+        if supplied != challenge.code:
+            challenge.attempts_remaining -= 1
+            if challenge.attempts_remaining <= 0:
+                _challenges.pop(normalized, None)
+            return False
+
+        _challenges.pop(normalized, None)
+        return True

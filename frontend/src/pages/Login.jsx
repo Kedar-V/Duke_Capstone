@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { firstLoginRequestOtp, firstLoginVerifyOtp, login } from '../api'
+import {
+  firstLoginRequestOtp,
+  firstLoginVerifyOtp,
+  login,
+  passwordResetRequestOtp,
+  passwordResetVerifyOtp,
+} from '../api'
 import { setAuth } from '../auth'
 import midsLogo from '../assets/mids-logo-white-bg.svg'
 import { getCurrentTheme, toggleTheme } from '../theme'
@@ -38,6 +44,18 @@ export default function LoginPage() {
           newPassword,
           displayName,
         })
+      } else if (mode === 'reset') {
+        await passwordResetVerifyOtp({
+          email,
+          otp,
+          newPassword,
+        })
+        setMode('login')
+        setPassword('')
+        setNewPassword('')
+        setOtp('')
+        setInfo('Password reset successful. Please sign in with your new password.')
+        return
       } else {
         auth = await login({ email, password })
       }
@@ -68,7 +86,7 @@ export default function LoginPage() {
           }
         }
       } else if (message.includes('Invalid or expired OTP')) {
-        setError('Invalid OTP. Use 0000 in this environment and try again.')
+        setError('Invalid or expired OTP. Please request a new code and try again.')
       } else if (message.includes('Password must be at least 8 characters')) {
         setError('Password must be at least 8 characters.')
       } else {
@@ -84,12 +102,19 @@ export default function LoginPage() {
     setInfo('')
     setSubmitting(true)
     try {
-      await firstLoginRequestOtp({ email })
-      setInfo('OTP requested. Use 0000 for now.')
+      if (mode === 'reset') {
+        await passwordResetRequestOtp({ email })
+        setInfo('OTP requested. Check your email for the verification code.')
+      } else {
+        await firstLoginRequestOtp({ email })
+        setInfo('OTP requested. Check your email for the verification code.')
+      }
     } catch (err) {
       const message = String(err?.message || '')
       if (message.includes('Password already configured')) {
         setError('This account already has a password. Sign in normally.')
+      } else if (message.includes('Password is not configured yet')) {
+        setError('This account has no password yet. Use first login setup.')
       } else {
         setError(message || 'Failed to request OTP')
       }
@@ -140,11 +165,13 @@ export default function LoginPage() {
         </div>
         <div className="card p-6">
           <h1 className="text-2xl font-heading text-duke-900">
-            {mode === 'setup' ? 'First Login Setup' : 'Sign in'}
+            {mode === 'setup' ? 'First Login Setup' : mode === 'reset' ? 'Reset Password' : 'Sign in'}
           </h1>
           <p className="muted mt-1">
             {mode === 'setup'
               ? 'Verify email with OTP, then set your password.'
+              : mode === 'reset'
+                ? 'Request an OTP and set a new password for your account.'
               : 'Sign in with the account provisioned by your admin.'}
           </p>
 
@@ -175,7 +202,7 @@ export default function LoginPage() {
               />
             </div>
 
-            {mode === 'setup' ? (
+            {mode === 'setup' || mode === 'reset' ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
                   <div>
@@ -201,7 +228,7 @@ export default function LoginPage() {
                 </div>
 
                 <div>
-                  <div className="label">New password</div>
+                  <div className="label">{mode === 'reset' ? 'Set new password' : 'New password'}</div>
                   <input
                     className="input-base"
                     type="password"
@@ -241,15 +268,15 @@ export default function LoginPage() {
 
             <button type="submit" className="btn-primary w-full" disabled={submitting}>
               {submitting
-                ? mode === 'setup'
+                ? mode === 'setup' || mode === 'reset'
                     ? 'Verifying…'
                     : 'Signing in…'
-                : mode === 'setup'
+                : mode === 'setup' || mode === 'reset'
                     ? 'Verify OTP and continue'
                     : 'Sign in'}
             </button>
 
-            {mode === 'setup' ? (
+            {mode === 'setup' || mode === 'reset' ? (
               <button
                 type="button"
                 className="btn-secondary w-full"
@@ -263,7 +290,21 @@ export default function LoginPage() {
               </button>
             ) : null}
 
-            {mode !== 'setup' ? (
+            {mode === 'login' ? (
+              <button
+                type="button"
+                className="btn-secondary w-full"
+                onClick={() => {
+                  setError('')
+                  setInfo('')
+                  setMode('reset')
+                }}
+              >
+                Forgot password? Reset with OTP
+              </button>
+            ) : null}
+
+            {mode !== 'setup' && mode !== 'reset' ? (
               <div className="text-xs text-slate-500 rounded-card border border-slate-200 bg-slate-50 p-3">
                 Accounts are provisioned by admins. If you do not have an account yet, contact your instructor.
               </div>
