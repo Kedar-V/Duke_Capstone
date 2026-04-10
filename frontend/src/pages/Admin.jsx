@@ -2450,10 +2450,10 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Admin sections">
+            <div className="grid grid-cols-2 xl:grid-cols-1 gap-2 xl:gap-3" role="tablist" aria-label="Admin sections">
               {Object.entries(groupedAdminTabs).map(([groupKey, tabs]) => (
-                <div key={groupKey} className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-0.5">
+                <div key={groupKey} className="space-y-1.5 xl:space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2 xl:p-3">
+                  <div className="text-[10px] xl:text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 px-0.5">
                     {tabGroupMeta[groupKey] || groupKey}
                   </div>
                   {tabs.map((tab) => {
@@ -2468,13 +2468,13 @@ export default function AdminPage() {
                         aria-selected={isActive}
                         className={
                           isActive
-                            ? 'w-full text-left px-2 py-1.5 rounded-md bg-duke-900 text-white shadow-sm'
-                            : 'w-full text-left px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            ? 'w-full text-left px-2 py-1.5 xl:px-3 xl:py-2 rounded-md bg-duke-900 text-white shadow-sm'
+                            : 'w-full text-left px-2 py-1.5 xl:px-3 xl:py-2 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                         }
                         onClick={() => setActiveTab(tab.key)}
                       >
-                        <div className="font-semibold text-[11px] sm:text-xs leading-tight">{tab.label}</div>
-                        <div className={`hidden sm:block ${isActive ? 'text-[11px] text-white/80' : 'text-[11px] text-slate-500'}`}>{tab.hint}</div>
+                        <div className="font-semibold text-[11px] sm:text-xs xl:text-sm leading-tight">{tab.label}</div>
+                        <div className={`hidden sm:block xl:text-xs ${isActive ? 'text-[11px] text-white/80' : 'text-[11px] text-slate-500'}`}>{tab.hint}</div>
                       </button>
                     )
                   })}
