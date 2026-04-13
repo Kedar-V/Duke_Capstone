@@ -832,8 +832,31 @@ def _solve_assignment_ilp(
         pid: pl.LpVariable(f"t_{pid}", cat=pl.LpBinary) for pid in project_ids
     }
 
+    locked_preassigned_project_by_user: dict[int, int] = {
+        uid: pid
+        for uid, pid in normalized_preassigned
+        if uid in user_id_set and pid in project_ids
+    }
+
     for uid in user_ids:
         problem += pl.lpSum(x[(uid, pid)] for pid in project_ids) <= 1
+
+    for uid in user_ids:
+        ranked_project_ids = set(ranking_map.get(uid, {}).keys())
+        locked_pid = locked_preassigned_project_by_user.get(uid)
+        for pid in project_ids:
+            if pid not in ranked_project_ids and locked_pid != pid:
+                problem += x[(uid, pid)] == 0
+
+    extra_rules = getattr(rule, "extra_rules", None)
+    if not isinstance(extra_rules, dict):
+        extra_rules = {}
+    max_team_avg_rank = float(extra_rules.get("max_team_avg_rank", 4.0) or 4.0)
+    max_team_avg_rank = max(1.0, min(10.0, max_team_avg_rank))
+    max_team_rank_disparity = float(
+        extra_rules.get("max_team_rank_disparity", 3.0) or 3.0
+    )
+    max_team_rank_disparity = max(0.0, min(9.0, max_team_rank_disparity))
 
     for pid in project_ids:
         project_load = pl.lpSum(x[(uid, pid)] for uid in user_ids)
@@ -841,6 +864,56 @@ def _solve_assignment_ilp(
         problem += project_load <= max_team_size * t[pid]
         for uid in user_ids:
             problem += x[(uid, pid)] <= t[pid]
+
+    rank_sum_terms_by_project: dict[int, object] = {}
+    project_load_by_project: dict[int, object] = {}
+    project_load_choice_vars: dict[tuple[int, int], object] = {}
+    possible_loads = list(range(int(min_team_size), int(max_team_size) + 1))
+
+    for pid in project_ids:
+        project_load = pl.lpSum(x[(uid, pid)] for uid in user_ids)
+        project_load_by_project[pid] = project_load
+        rank_sum_terms = pl.lpSum(
+            (
+                float(ranking_map.get(uid, {}).get(pid)) * x[(uid, pid)]
+                if ranking_map.get(uid, {}).get(pid) is not None
+                else 10.0 * x[(uid, pid)]
+            )
+            for uid in user_ids
+        )
+        rank_sum_terms_by_project[pid] = rank_sum_terms
+        problem += rank_sum_terms <= max_team_avg_rank * project_load
+
+        choice_vars = []
+        for load_value in possible_loads:
+            y = pl.LpVariable(f"team_load_choice_{pid}_{load_value}", cat=pl.LpBinary)
+            project_load_choice_vars[(pid, load_value)] = y
+            choice_vars.append(y)
+        problem += pl.lpSum(choice_vars) == t[pid]
+        problem += project_load == pl.lpSum(
+            load_value * project_load_choice_vars[(pid, load_value)]
+            for load_value in possible_loads
+        )
+
+    disparity_big_m = 10 * int(max_team_size) * int(max_team_size)
+    for left_index, left_pid in enumerate(project_ids):
+        for right_pid in project_ids[left_index + 1 :]:
+            left_rank_sum = rank_sum_terms_by_project[left_pid]
+            right_rank_sum = rank_sum_terms_by_project[right_pid]
+            for left_load in possible_loads:
+                for right_load in possible_loads:
+                    left_choice = project_load_choice_vars[(left_pid, left_load)]
+                    right_choice = project_load_choice_vars[(right_pid, right_load)]
+                    rhs = (
+                        max_team_rank_disparity * left_load * right_load
+                        + disparity_big_m * (2 - left_choice - right_choice)
+                    )
+                    problem += (
+                        right_load * left_rank_sum - left_load * right_rank_sum <= rhs
+                    )
+                    problem += (
+                        left_load * right_rank_sum - right_load * left_rank_sum <= rhs
+                    )
 
     preassigned_user_ids: set[int] = set()
     preassigned_project_by_user: dict[int, int] = {}
@@ -904,19 +977,6 @@ def _solve_assignment_ilp(
                     problem += z >= x[(uid, pid)] + x[(teammate_id, pid)] - 1
                     pair_coeffs.append((z, -int(rule.penalty_avoid)))
 
-    for pid in project_ids:
-        low_pref_terms = []
-        for uid in user_ids:
-            rank = ranking_map.get(uid, {}).get(pid)
-            is_low_pref = 1 if (rank is not None and int(rank) > 5) else 0
-            if is_low_pref:
-                low_pref_terms.append(x[(uid, pid)])
-        if low_pref_terms:
-            problem += (
-                pl.lpSum(low_pref_terms)
-                <= int(rule.max_low_preference_per_team) * t[pid]
-            )
-
     assignment_bonus = 10_000
     assignment_terms = []
     for uid in user_ids:
@@ -934,7 +994,8 @@ def _solve_assignment_ilp(
     team_count_penalty = 1
     team_terms = [-team_count_penalty * t[pid] for pid in project_ids]
     pair_terms = [coeff * var for var, coeff in pair_coeffs]
-    problem += pl.lpSum(assignment_terms + pair_terms + team_terms)
+    objective_terms = assignment_terms + pair_terms + team_terms
+    problem += pl.lpSum(objective_terms)
 
     solver = pl.PULP_CBC_CMD(msg=False, timeLimit=30)
     problem.solve(solver)
@@ -1119,13 +1180,19 @@ def _build_assignment_preview(
                 project_demand[project_id] += max(11 - rank, 0)
 
     needed_projects = max(1, math.ceil(len(students) / max(max_team_size, 1)))
+    extra_rules = getattr(rule, "extra_rules", None)
+    if not isinstance(extra_rules, dict):
+        extra_rules = {}
+    project_selection_buffer = int(extra_rules.get("project_selection_buffer", 2) or 2)
+    project_selection_buffer = max(0, project_selection_buffer)
+
     sorted_project_ids = sorted(
         project_demand.keys(),
         key=lambda pid: (project_demand.get(pid, 0), -pid),
         reverse=True,
     )
     selected_project_ids = sorted_project_ids[
-        : min(len(sorted_project_ids), needed_projects)
+        : min(len(sorted_project_ids), needed_projects + project_selection_buffer)
     ]
     if not selected_project_ids:
         selected_project_ids = [projects[0].project_id]
@@ -1149,6 +1216,10 @@ def _build_assignment_preview(
                 f"Preassignment project {project_id} is out of scope and was ignored."
             )
             continue
+        if project_id not in ranking_map.get(user_id, {}):
+            warnings.append(
+                f"Preassignment user {user_id} -> project {project_id} is unranked and will be honored as a locked override."
+            )
         normalized_preassigned.append((user_id, project_id))
         if project_id not in selected_project_ids:
             selected_project_ids.append(project_id)

@@ -427,11 +427,12 @@ export default function AdminPage() {
   const [ruleMaxTeamSize, setRuleMaxTeamSize] = useState('5')
   const [ruleEnforceSameCohort, setRuleEnforceSameCohort] = useState(true)
   const [ruleHardAvoid, setRuleHardAvoid] = useState(true)
-  const [ruleMaxLowPreference, setRuleMaxLowPreference] = useState('1')
   const [ruleWeightProjectPreference, setRuleWeightProjectPreference] = useState('55')
   const [ruleWeightProjectRating, setRuleWeightProjectRating] = useState('15')
   const [ruleWeightMutualWant, setRuleWeightMutualWant] = useState('25')
+  const [ruleMaxTeamRankDisparity, setRuleMaxTeamRankDisparity] = useState('3.0')
   const [rulePenaltyAvoid, setRulePenaltyAvoid] = useState('100')
+  const [ruleMaxTeamAvgRank, setRuleMaxTeamAvgRank] = useState('4.0')
   const [ruleNotes, setRuleNotes] = useState('')
   const [ruleFormError, setRuleFormError] = useState('')
 
@@ -1200,6 +1201,13 @@ export default function AdminPage() {
           projectCopies[sourceProjectIndex].teams = projectCopies[sourceProjectIndex].teams.filter((team) => team.length > 0)
         }
 
+        const newRankForTarget = Number(rankByUserProject.get(Number(userId))?.get(Number(targetProjectId)) || 0)
+        if (newRankForTarget <= 0) {
+          const targetLabel = targetProject.project_title || targetProject.organization || `Project ${targetProject.project_id}`
+          const studentLabel = movingMember.display_name || movingMember.email || `User ${movingMember.user_id}`
+          setError(`Alert: ${studentLabel} was moved to an unranked project (${targetLabel}).`)
+        }
+
         const updatedTargetMembers = projectCopies[targetProjectIndex].teams.flat().concat([movingMember])
         projectCopies[targetProjectIndex].teams = [updatedTargetMembers]
         projectCopies[targetProjectIndex].assigned_count = updatedTargetMembers.length
@@ -1833,11 +1841,12 @@ export default function AdminPage() {
     setRuleMaxTeamSize(String(item.max_team_size ?? 5))
     setRuleEnforceSameCohort(Boolean(item.enforce_same_cohort))
     setRuleHardAvoid(Boolean(item.hard_avoid))
-    setRuleMaxLowPreference(String(item.max_low_preference_per_team ?? 1))
     setRuleWeightProjectPreference(String(item.weight_project_preference ?? 55))
     setRuleWeightProjectRating(String(item.weight_project_rating ?? 15))
     setRuleWeightMutualWant(String(item.weight_mutual_want ?? 25))
+    setRuleMaxTeamRankDisparity(String(item.extra_rules?.max_team_rank_disparity ?? 3.0))
     setRulePenaltyAvoid(String(item.penalty_avoid ?? 100))
+    setRuleMaxTeamAvgRank(String(item.extra_rules?.max_team_avg_rank ?? 4.0))
     setRuleNotes(item.notes || '')
     setRuleFormError('')
     refreshSavedAssignmentRuns(item.id)
@@ -1871,11 +1880,15 @@ export default function AdminPage() {
       team_size: Math.round((Number(ruleMinTeamSize || 3) + Number(ruleMaxTeamSize || 5)) / 2),
       enforce_same_cohort: Boolean(ruleEnforceSameCohort),
       hard_avoid: Boolean(ruleHardAvoid),
-      max_low_preference_per_team: Number(ruleMaxLowPreference || 1),
+      max_low_preference_per_team: 8,
       weight_project_preference: Number(ruleWeightProjectPreference || 55),
       weight_project_rating: Number(ruleWeightProjectRating || 15),
       weight_mutual_want: Number(ruleWeightMutualWant || 25),
       penalty_avoid: Number(rulePenaltyAvoid || 100),
+      extra_rules: {
+        max_team_avg_rank: Number(ruleMaxTeamAvgRank || 4.0),
+        max_team_rank_disparity: Number(ruleMaxTeamRankDisparity || 3.0),
+      },
       notes: ruleNotes || null,
     })
   }
@@ -1893,8 +1906,9 @@ export default function AdminPage() {
     const projectWeight = Number(item.weight_project_preference || 0)
     const ratingWeight = Number(item.weight_project_rating || 0)
     const wantWeight = Number(item.weight_mutual_want || 0)
+    const maxTeamRankDisparity = Number(item.extra_rules?.max_team_rank_disparity ?? 3.0)
     const avoidPenalty = Number(item.penalty_avoid || 0)
-    const maxLowPrefPerTeam = Number(item.max_low_preference_per_team ?? 1)
+    const maxTeamAvgRank = Number(item.extra_rules?.max_team_avg_rank ?? 4.0)
     const totalWeight = projectWeight + ratingWeight + wantWeight
 
     const sampleRank = 2
@@ -1915,6 +1929,7 @@ export default function AdminPage() {
         points: [
           `Scope: ${item.cohort_id ? `Cohort ${item.cohort_id}` : 'Global across cohorts'}. Only in-scope students/projects are considered.`,
           'The solver is Integer Linear Programming (ILP): it optimizes all students and projects in one global solve, not one-by-one greedy placement.',
+          'Before solving, the system picks a demand-ranked candidate project pool with a small buffer (needed projects + buffer) so ILP can search broader combinations.',
           'Decision variables include student-to-project assignment (binary) and whether a project/team is active (binary/integer helper variable).',
           `Team size window is ${minTeamSize}-${maxTeamSize} with target size ${targetTeamSize}.`,
           `${item.enforce_same_cohort ? 'Same-cohort assignment is enforced when this rule has a cohort scope.' : 'Cross-cohort assignment is allowed if needed by scope.'}`,
@@ -1932,6 +1947,7 @@ export default function AdminPage() {
           `Teammate affinity term: preferred-teammate-hits x weight_mutual_want (${wantWeight}).`,
           `${item.hard_avoid ? 'Avoid pairs are primarily handled as a hard feasibility constraint when hard avoid is ON.' : 'Avoid pairs are treated as soft penalties when hard avoid is OFF.'}`,
           `Penalty term: avoid-hits x penalty_avoid (${avoidPenalty}).`,
+          `Hard disparity constraint: difference in average rank between any two active teams must stay within ${maxTeamRankDisparity.toFixed(1)}.`,
           `Total positive weight budget: ${totalWeight} (before penalties).`,
           `Worked example: (11-${sampleRank})x${projectWeight} + ${sampleRating}x${ratingWeight} + ${sampleWantHits}x${wantWeight} - ${sampleAvoidHits}x${avoidPenalty} = ${sampleObjectiveScore}.`,
         ],
@@ -1940,11 +1956,13 @@ export default function AdminPage() {
         title: 'Feasibility Constraints',
         points: [
           'Each student can be assigned to at most one project in the run (and typically exactly one when enough feasible capacity exists).',
+          'ILP ranked-only rule: automatic solver assignment can only use projects that the student ranked (top-10 list).',
+          'Unranked assignment is only possible through admin manual drag/drop override, and that action shows an alert.',
           `If a project/team is active, assigned load must be between min and max: ${minTeamSize} <= team_size <= ${maxTeamSize}.`,
+          `Hard quality cap: each active team must satisfy average assigned rank <= ${maxTeamAvgRank.toFixed(1)}.`,
+          `Hard parity cap: absolute average-rank gap between any two active teams must be <= ${maxTeamRankDisparity.toFixed(1)}.`,
           `Target size (${targetTeamSize}) guides balancing and interpretation but hard feasibility comes from min/max bounds.`,
           `${item.hard_avoid ? 'Hard avoid is enabled: avoid pairs cannot share a project.' : 'Hard avoid is disabled: avoid conflicts are allowed but penalized in the objective.'}`,
-          `Low-preference cap: for each active team/project, students with low rank for that project are limited to ${maxLowPrefPerTeam}.`,
-          'Low preference currently means rank > 5; unranked items are not counted as low preference in this cap.',
           item.hard_avoid
             ? 'If constraints conflict too much (for example many avoid pairs + tight team ranges), the solver may leave students unassigned rather than violate hard rules.'
             : 'When feasibility allows, ILP balances preference quality with penalties to pick the best global solution.',
@@ -1958,7 +1976,7 @@ export default function AdminPage() {
           `team_size target (${targetTeamSize}): preferred center point for balancing/splitting, while min/max remain hard limits.`,
           `enforce_same_cohort (${item.enforce_same_cohort ? 'ON' : 'OFF'}): keeps assignments cohort-local when scoped, or allows cross-cohort flexibility.`,
           `hard_avoid (${item.hard_avoid ? 'ON' : 'OFF'}): toggles avoid relationships between hard exclusions and soft penalties.`,
-          `max_low_preference_per_team (${maxLowPrefPerTeam}): limits concentration of weak-fit placements in any one team.`,
+          `max_team_rank_disparity (${maxTeamRankDisparity.toFixed(1)}): tightens/loosens allowed quality gap between teams as a hard feasibility rule.`,
           `weight_project_preference (${projectWeight}), weight_project_rating (${ratingWeight}), weight_mutual_want (${wantWeight}): shifts objective emphasis among preference rank, rating, and teammate fit.`,
           `penalty_avoid (${avoidPenalty}): increases/decreases cost of avoid conflicts when soft-penalty mode is active.`,
         ],
@@ -1967,9 +1985,10 @@ export default function AdminPage() {
         title: 'How To Read Results',
         points: [
           'Top-1/Top-3/Top-5 rates summarize preference quality of the final global assignment.',
+          'If an admin manually drags a student to an unranked project, the UI raises an alert so overrides are explicit and auditable.',
           'Unassigned count is the main feasibility pressure indicator; rising values usually mean constraints are too tight for available capacity.',
           'Compare rule configs using both quality metrics and unassigned count, not a single metric alone.',
-          `Practical tuning: if unassigned is high, first relax hard_avoid or max_low_preference_per_team, or widen min/max from ${minTeamSize}-${maxTeamSize}.`,
+          `Practical tuning: if unassigned is high, first relax hard_avoid, widen min/max from ${minTeamSize}-${maxTeamSize}, or loosen rank caps.`,
           item.notes ? `Notes: ${item.notes}` : 'No notes were added for this config.',
           item.is_active
             ? 'This config is currently active in its scope.'
@@ -1989,11 +2008,12 @@ export default function AdminPage() {
     setRuleMaxTeamSize('5')
     setRuleEnforceSameCohort(true)
     setRuleHardAvoid(true)
-    setRuleMaxLowPreference('1')
     setRuleWeightProjectPreference('55')
     setRuleWeightProjectRating('15')
     setRuleWeightMutualWant('25')
+    setRuleMaxTeamRankDisparity('3.0')
     setRulePenaltyAvoid('100')
+    setRuleMaxTeamAvgRank('4.0')
     setRuleNotes('')
     setRuleFormError('')
   }
@@ -2002,6 +2022,13 @@ export default function AdminPage() {
     const parsedMinTeamSize = Number(ruleMinTeamSize)
     const parsedMaxTeamSize = Number(ruleMaxTeamSize)
     const parsedTargetTeamSize = Math.round((parsedMinTeamSize + parsedMaxTeamSize) / 2)
+
+    const existingExtraRules = (
+      (editingRuleId
+        ? (assignmentRules || []).find((row) => Number(row.id) === Number(editingRuleId))?.extra_rules
+        : activeAssignmentRule?.extra_rules)
+      || {}
+    )
 
     const payload = {
       name: ruleName.trim(),
@@ -2012,11 +2039,16 @@ export default function AdminPage() {
       max_team_size: parsedMaxTeamSize,
       enforce_same_cohort: Boolean(ruleEnforceSameCohort),
       hard_avoid: Boolean(ruleHardAvoid),
-      max_low_preference_per_team: Number(ruleMaxLowPreference),
+      max_low_preference_per_team: 8,
       weight_project_preference: Number(ruleWeightProjectPreference),
       weight_project_rating: Number(ruleWeightProjectRating),
       weight_mutual_want: Number(ruleWeightMutualWant),
       penalty_avoid: Number(rulePenaltyAvoid),
+      extra_rules: {
+        ...existingExtraRules,
+        max_team_avg_rank: Number(ruleMaxTeamAvgRank),
+        max_team_rank_disparity: Number(ruleMaxTeamRankDisparity),
+      },
       notes: ruleNotes.trim() || null,
     }
 
@@ -2033,14 +2065,6 @@ export default function AdminPage() {
     if (Number.isNaN(payload.team_size) || payload.team_size < payload.min_team_size || payload.team_size > payload.max_team_size) {
       return { error: 'Derived target team size is invalid for selected range.' }
     }
-    if (
-      Number.isNaN(payload.max_low_preference_per_team) ||
-      payload.max_low_preference_per_team < 0 ||
-      payload.max_low_preference_per_team > 8
-    ) {
-      return { error: 'Max low-preference per team must be between 0 and 8.' }
-    }
-
     const weightKeys = [
       'weight_project_preference',
       'weight_project_rating',
@@ -2055,6 +2079,16 @@ export default function AdminPage() {
 
     if (Number.isNaN(payload.penalty_avoid) || payload.penalty_avoid < 0 || payload.penalty_avoid > 1000) {
       return { error: 'Avoid penalty must be between 0 and 1000.' }
+    }
+
+    const maxTeamAvgRank = Number(payload.extra_rules?.max_team_avg_rank)
+    if (Number.isNaN(maxTeamAvgRank) || maxTeamAvgRank < 1 || maxTeamAvgRank > 10) {
+      return { error: 'Max team average rank must be between 1.0 and 10.0.' }
+    }
+
+    const maxTeamRankDisparity = Number(payload.extra_rules?.max_team_rank_disparity)
+    if (Number.isNaN(maxTeamRankDisparity) || maxTeamRankDisparity < 0 || maxTeamRankDisparity > 9) {
+      return { error: 'Max team rank disparity must be between 0.0 and 9.0.' }
     }
 
     return { payload }
@@ -2129,6 +2163,23 @@ export default function AdminPage() {
     } finally {
       setPreviewLoading(false)
     }
+  }
+
+  function resolveSelectedRuleIdForPreview() {
+    if (editingRuleId) return Number(editingRuleId)
+    if (previewResult?.rule_config_id) return Number(previewResult.rule_config_id)
+    if (activeAssignmentRule?.id) return Number(activeAssignmentRule.id)
+    if ((assignmentRules || []).length > 0) return Number(assignmentRules[0].id)
+    return null
+  }
+
+  async function handleRefreshPreviewWithSelectedRule() {
+    const ruleId = resolveSelectedRuleIdForPreview()
+    if (!ruleId) {
+      setError('Select or edit a rule first, then refresh snapshot.')
+      return
+    }
+    await handlePreviewRule(ruleId)
   }
 
   async function handleSaveAssignmentSnapshot() {
@@ -3103,8 +3154,8 @@ export default function AdminPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <div className="label">Max low preference/team</div>
-                        <input className="input-base" type="number" min="0" max="8" value={ruleMaxLowPreference} onChange={(e) => setRuleMaxLowPreference(e.target.value)} />
+                        <div className="label">Max team average rank</div>
+                        <input className="input-base" type="number" min="1" max="10" step="0.1" value={ruleMaxTeamAvgRank} onChange={(e) => setRuleMaxTeamAvgRank(e.target.value)} />
                       </div>
                     </div>
 
@@ -3133,6 +3184,10 @@ export default function AdminPage() {
                         <div>
                           <div className="label">Mutual want</div>
                           <input className="input-base" type="number" min="0" max="100" value={ruleWeightMutualWant} onChange={(e) => setRuleWeightMutualWant(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="label">Max team rank disparity</div>
+                          <input className="input-base" type="number" min="0" max="9" step="0.1" value={ruleMaxTeamRankDisparity} onChange={(e) => setRuleMaxTeamRankDisparity(e.target.value)} />
                         </div>
                       </div>
                     </div>
@@ -3201,6 +3256,14 @@ export default function AdminPage() {
                       {previewLoading ? 'Running preview…' : 'Preview selected rule'}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleRefreshPreviewWithSelectedRule}
+                    disabled={previewLoading}
+                  >
+                    {previewLoading ? 'Refreshing…' : 'Refresh snapshot'}
+                  </button>
                 </div>
               </div>
 
